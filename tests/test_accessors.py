@@ -1,6 +1,4 @@
-"""Tests for the flat `.vd` accessor and named affine frames."""
-
-from typing import Any
+"""Public accessor contracts and named affine frames, with independent oracles."""
 
 import numpy as np
 import pytest
@@ -9,19 +7,8 @@ import xarray as xr
 import voxeldata as vd
 
 
-def _data(**kwargs: Any) -> xr.DataArray:
-    return vd.create_voxeldata(
-        np.zeros((2, 3, 4)),
-        dims=("k", "j", "i"),
-        spacing=(1.0, 2.0, 3.0),
-        origin=(10.0, 20.0, 30.0),
-        **kwargs,
-    )
-
-
-def test_properties_expose_index_geometry() -> None:
-    data = _data()
-
+def test_properties_expose_index_geometry(sample_voxeldata_3d: xr.DataArray) -> None:
+    data = sample_voxeldata_3d
     assert data.vd.voxel_dims == ("k", "j", "i")
     assert data.vd.world_dims == ("z", "y", "x")
     assert data.vd.units == "mm"
@@ -34,23 +21,20 @@ def test_properties_expose_index_geometry() -> None:
     np.testing.assert_allclose(data.vd.direction, np.eye(3))
     np.testing.assert_allclose(
         data.vd.voxel_to_world,
-        np.diag([1, 2, 3, 1])
-        + np.array([[0, 0, 0, 10], [0, 0, 0, 20], [0, 0, 0, 30], [0, 0, 0, 0]]),
+        [[1, 0, 0, 10], [0, 2, 0, 20], [0, 0, 3, 30], [0, 0, 0, 1]],
     )
 
 
-def test_spacing_and_origin_cover_non_spatial_dims() -> None:
-    data = vd.create_voxeldata(
-        np.zeros((4, 2, 3, 4)),
-        dims=("time", "k", "j", "i"),
-        dt=0.5,
-        t0=10.0,
-        spacing=(1.0, 2.0, 3.0),
-        origin=(10.0, 20.0, 30.0),
-    )
-
-    assert data.vd.spacing == {"time": 0.5, "k": 1.0, "j": 2.0, "i": 3.0}
-    assert data.vd.origin == {
+def test_spacing_and_origin_cover_non_spatial_dims(
+    sample_voxeldata_3dt: xr.DataArray,
+) -> None:
+    assert sample_voxeldata_3dt.vd.spacing == {
+        "time": 0.5,
+        "k": 1.0,
+        "j": 2.0,
+        "i": 3.0,
+    }
+    assert sample_voxeldata_3dt.vd.origin == {
         "time": 10.0,
         "z": 10.0,
         "y": 20.0,
@@ -58,145 +42,264 @@ def test_spacing_and_origin_cover_non_spatial_dims() -> None:
     }
 
 
-def test_set_voxel_to_world_on_plain_dataarray() -> None:
-    data = xr.DataArray(
-        np.zeros((2, 3, 4)),
-        dims=("k", "j", "i"),
-        coords={"k": np.arange(2), "j": np.arange(3), "i": np.arange(4)},
-    )
+def test_set_voxel_to_world_on_plain_dataarray(plain_volume: xr.DataArray) -> None:
     with pytest.raises(ValueError, match="voxel-to-world index"):
-        _ = data.vd.origin
-
-    result = data.vd.set_voxel_to_world(np.diag([2.0, 3.0, 4.0, 1.0]), units="um")
-
+        _ = plain_volume.vd.origin
+    result = plain_volume.vd.set_voxel_to_world(
+        np.diag([2.0, 3.0, 4.0, 1.0]), units="um"
+    )
     assert result.vd.units == "um"
     assert result.vd.spacing == {"k": 2.0, "j": 3.0, "i": 4.0}
-    assert not vd.has_voxel_to_world_index(data)
+    assert not vd.has_voxel_to_world_index(plain_volume)
+    np.testing.assert_array_equal(result.values, plain_volume.values)
 
 
-def test_set_voxel_to_world_drops_named_affines_with_warning() -> None:
-    data = _data(affines={"lab": np.eye(4)})
-
+def test_set_voxel_to_world_drops_named_affines_with_warning(
+    sample_voxeldata_3d: xr.DataArray,
+) -> None:
+    data = sample_voxeldata_3d.vd.set_affine("lab", np.eye(4))
     with pytest.warns(UserWarning, match="drops existing named affine"):
         result = data.vd.set_voxel_to_world(np.eye(4))
-
     assert result.vd.affines == {}
-    assert data.vd.affines != {}
+    assert set(data.vd.affines) == {"lab"}
 
 
-def test_set_affine_get_affine_remove_affine() -> None:
-    data = _data()
-    lab = np.eye(4)
-    lab[:3, 3] = [1.0, 2.0, 3.0]
-
-    with_affine = data.vd.set_affine("lab", lab)
-    np.testing.assert_allclose(with_affine.vd.get_affine("lab"), lab)
+def test_set_affine_get_affine_remove_affine(
+    sample_voxeldata_3d: xr.DataArray, named_affines: dict[str, np.ndarray]
+) -> None:
+    data = sample_voxeldata_3d
+    with_affine = data.vd.set_affine("lab", named_affines["lab"])
+    np.testing.assert_allclose(with_affine.vd.get_affine("lab"), named_affines["lab"])
     assert set(with_affine.vd.affines) == {"lab"}
     assert data.vd.affines == {}
-
     removed = with_affine.vd.remove_affine("lab")
     assert removed.vd.affines == {}
+    assert set(with_affine.vd.affines) == {"lab"}
     with pytest.raises(KeyError, match="lab"):
         removed.vd.get_affine("lab")
 
 
-def test_apply_named_affine_makes_it_identity() -> None:
-    lab = np.eye(4)
-    lab[:3, 3] = [10.0, 20.0, 30.0]
-    data = _data(affines={"lab": lab})
-
-    result = data.vd.apply("lab")
-
-    np.testing.assert_allclose(result.vd.get_affine("lab"), np.eye(4))
-    np.testing.assert_allclose(result.vd.origin["z"], 20.0)
-    np.testing.assert_allclose(result.vd.origin["y"], 40.0)
-    np.testing.assert_allclose(result.vd.origin["x"], 60.0)
-
-
-def test_apply_re_expresses_other_frames() -> None:
-    lab = np.diag([2.0, 2.0, 2.0, 1.0])
-    other = np.diag([4.0, 4.0, 4.0, 1.0])
-    data = _data(affines={"lab": lab, "other": other})
-
-    result = data.vd.apply("lab")
-
-    np.testing.assert_allclose(result.vd.get_affine("lab"), np.eye(4))
+@pytest.mark.parametrize("inplace", [False, True])
+def test_apply_named_frame_composition(
+    sample_voxeldata_3d: xr.DataArray,
+    named_affines: dict[str, np.ndarray],
+    inplace: bool,
+) -> None:
+    data = sample_voxeldata_3d.vd.set_affine("lab", named_affines["lab"]).vd.set_affine(
+        "atlas", named_affines["atlas"]
+    )
+    before = data.copy(deep=True)
+    result = data.vd.apply("lab", inplace=inplace)
+    assert (result is data) is inplace
+    np.testing.assert_array_equal(result.vd.get_affine("lab"), np.eye(4))
     np.testing.assert_allclose(
-        result.vd.get_affine("other"),
-        other @ np.linalg.inv(lab),
+        result.vd.get_affine("atlas"),
+        [[0, 2, 0, -1], [-3, 0, 0, 32], [0, 0, 4, -25], [0, 0, 0, 1]],
+    )
+    point = result.isel(k=1, j=2, i=3)
+    np.testing.assert_allclose(
+        [point.coords[d].item() for d in ("z", "y", "x")], [-19, 18, 50]
+    )
+    np.testing.assert_array_equal(result.values, before.values)
+    assert result.attrs == before.attrs
+    if not inplace:
+        xr.testing.assert_identical(data, before)
+        np.testing.assert_array_equal(data.vd.get_affine("lab"), named_affines["lab"])
+
+
+def test_apply_per_grid_frame_broadcasts_shared_frames(
+    sample_voxeldata_grids: xr.DataArray, named_affines: dict[str, np.ndarray]
+) -> None:
+    frames = np.stack([named_affines["lab"], named_affines["lab"].copy()])
+    frames[1, :3, 3] += [10, 20, 30]
+    data = sample_voxeldata_grids.vd.set_affine("lab", frames).vd.set_affine(
+        "atlas", named_affines["atlas"]
+    )
+    result = data.vd.apply("lab")
+    np.testing.assert_array_equal(result.vd.get_affine("lab"), np.eye(4))
+    np.testing.assert_allclose(
+        result.vd.get_affine("atlas"),
+        [
+            [[0, 2, 0, -1], [-3, 0, 0, 32], [0, 0, 4, -25], [0, 0, 0, 1]],
+            [[0, 2, 0, -41], [-3, 0, 0, 62], [0, 0, 4, -145], [0, 0, 0, 1]],
+        ],
+    )
+    point = result.isel(grid=1, k=0, j=0, i=0)
+    np.testing.assert_allclose(
+        [point.coords[d].item() for d in ("z", "y", "x")], [15, 137, 76]
+    )
+    np.testing.assert_array_equal(data.vd.get_affine("lab"), frames)
+
+
+def test_to_uses_both_nonidentity_frames(
+    sample_voxeldata_3d: xr.DataArray, named_affines: dict[str, np.ndarray]
+) -> None:
+    source = sample_voxeldata_3d.vd.set_affine("common", named_affines["lab"])
+    target = sample_voxeldata_3d.vd.set_affine("common", named_affines["atlas"])
+    expected = [
+        [0, -0.5, 0, -4],
+        [1 / 3, 0, 0, -10 / 3],
+        [0, 0, 0.25, -2],
+        [0, 0, 0, 1],
+    ]
+    np.testing.assert_allclose(source.vd.to(target, "common"), expected)
+    np.testing.assert_allclose(
+        vd.get_relative_affine(source, target, "common"), expected
     )
 
 
-def test_to_uses_named_frame() -> None:
-    lab = np.diag([2.0, 2.0, 2.0, 1.0])
-    data = _data(affines={"lab": lab})
-    other = vd.create_voxeldata(
-        np.zeros((2, 3, 4)),
-        dims=("k", "j", "i"),
-        voxel_to_world=np.eye(4),
-        affines={"lab": np.eye(4)},
+@pytest.mark.parametrize("missing_side", ["source", "target"])
+def test_to_requires_frame_on_both_sides(
+    sample_voxeldata_3d: xr.DataArray, missing_side: str
+) -> None:
+    framed = sample_voxeldata_3d.vd.set_affine("lab", np.eye(4))
+    source, target = (
+        (sample_voxeldata_3d, framed)
+        if missing_side == "source"
+        else (framed, sample_voxeldata_3d)
     )
-
-    np.testing.assert_allclose(data.vd.to(other, "lab"), np.linalg.inv(np.eye(4)) @ lab)
-
-
-def test_attrs_affines_are_ignored() -> None:
-    data = _data()
-    data.attrs["affines"] = {"lab": np.eye(4)}
-
     with pytest.raises(KeyError, match="lab"):
-        data.vd.apply("lab")
-    assert data.vd.affines == {}
+        source.vd.to(target, "lab")
 
 
-def test_grid_selection_reduces_named_affines() -> None:
-    first = np.eye(4)
-    first[:3, 3] = [1.0, 0.0, 0.0]
-    second = np.eye(4)
-    second[:3, 3] = [2.0, 0.0, 0.0]
-    data = vd.create_voxeldata(
-        np.zeros((2, 2, 3, 4)),
-        dims=("grid", "k", "j", "i"),
-        grid=np.arange(2),
-        voxel_to_world=np.stack([first, second]),
-        affines={"lab": np.stack([first, second])},
+def test_attrs_affines_are_ignored_and_untouched(
+    sample_voxeldata_3d: xr.DataArray,
+) -> None:
+    data = sample_voxeldata_3d
+    data.attrs["affines"] = {"legacy": np.eye(4)}
+    with pytest.raises(KeyError, match="legacy"):
+        data.vd.apply("legacy")
+    result = data.vd.apply(np.diag([2.0, 2.0, 2.0, 1.0]))
+    assert result.vd.affines == {}
+    np.testing.assert_array_equal(result.attrs["affines"]["legacy"], np.eye(4))
+
+
+@pytest.mark.parametrize(
+    "indexer, positions",
+    [(0, [0]), (slice(1, 2), [1]), ([1, 0], [1, 0]), (np.array([1]), [1])],
+)
+def test_grid_selection_slices_named_affines(
+    sample_voxeldata_grids: xr.DataArray,
+    grid_affines: np.ndarray,
+    indexer: object,
+    positions: list[int],
+) -> None:
+    data = sample_voxeldata_grids.vd.set_affine("lab", grid_affines).vd.set_affine(
+        "shared", np.eye(4)
     )
+    selected = data.isel(grid=indexer)
+    expected = (
+        grid_affines[positions[0]]
+        if isinstance(indexer, int)
+        else grid_affines[positions]
+    )
+    assert selected.vd.is_grid_dependent is not isinstance(indexer, int)
+    np.testing.assert_array_equal(selected.vd.get_affine("lab"), expected)
+    np.testing.assert_array_equal(selected.vd.get_affine("shared"), np.eye(4))
+    np.testing.assert_array_equal(data.vd.get_affine("lab"), grid_affines)
 
-    selected = data.isel(grid=0)
 
-    assert not selected.vd.is_grid_dependent
-    np.testing.assert_allclose(selected.vd.get_affine("lab"), first)
+def test_spatial_selection_preserves_named_affines(
+    sample_voxeldata_grids: xr.DataArray, grid_affines: np.ndarray
+) -> None:
+    data = sample_voxeldata_grids.vd.set_affine("lab", grid_affines)
+    np.testing.assert_array_equal(data.isel(j=1).vd.get_affine("lab"), grid_affines)
 
 
-def test_concat_merges_named_affines() -> None:
-    first = np.eye(4)
-    first[:3, 3] = [1.0, 0.0, 0.0]
-    second = np.eye(4)
-    second[:3, 3] = [2.0, 0.0, 0.0]
-    shared = np.diag([2.0, 2.0, 2.0, 1.0])
+def test_concat_merges_named_affines(
+    sample_voxeldata_grids: xr.DataArray, grid_affines: np.ndarray
+) -> None:
+    data = sample_voxeldata_grids.vd.set_affine("lab", grid_affines).vd.set_affine(
+        "shared", np.eye(4)
+    )
+    combined = xr.concat(
+        [data.isel(grid=slice(1, 2)), data.isel(grid=slice(0, 1))], dim="grid"
+    )
+    np.testing.assert_array_equal(combined.coords["grid"], [20, 10])
+    np.testing.assert_array_equal(combined.vd.get_affine("lab"), grid_affines[[1, 0]])
+    np.testing.assert_array_equal(combined.vd.get_affine("shared"), np.eye(4))
+    np.testing.assert_array_equal(combined.values[:, 0, 0, 0], [24, 0])
 
-    def make(affine: np.ndarray, grid: int) -> xr.DataArray:
-        return vd.create_voxeldata(
-            np.zeros((1, 2, 3, 4)),
-            dims=("grid", "k", "j", "i"),
-            grid=np.array([grid]),
-            voxel_to_world=affine[np.newaxis],
-            affines={"lab": affine[np.newaxis], "shared": shared},
+
+@pytest.mark.parametrize(
+    "case, message",
+    [
+        ("names", "different named affines"),
+        ("shared", "differs"),
+        ("mixed", "mixes shared"),
+    ],
+)
+def test_concat_rejects_incompatible_frames(
+    sample_voxeldata_grids: xr.DataArray, case: str, message: str
+) -> None:
+    left = sample_voxeldata_grids.isel(grid=slice(0, 1)).vd.set_affine("lab", np.eye(4))
+    right = sample_voxeldata_grids.isel(grid=slice(1, 2))
+    if case == "shared":
+        right = right.vd.set_affine("lab", np.diag([2.0, 2.0, 2.0, 1.0]))
+    elif case == "mixed":
+        right = right.vd.set_affine("lab", np.eye(4)[None])
+    with pytest.raises(ValueError, match=message):
+        xr.concat([left, right], dim="grid")
+
+
+@pytest.mark.parametrize(
+    "affine, message",
+    [
+        (np.eye(3), "shape"),
+        (np.full((4, 4), np.nan), "finite"),
+        (np.diag([1.0, 1.0, 1.0, 2.0]), "homogeneous"),
+        (np.eye(4)[None], "shape"),
+    ],
+)
+def test_named_affine_validation(
+    sample_voxeldata_3d: xr.DataArray, affine: np.ndarray, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        sample_voxeldata_3d.vd.set_affine("bad", affine)
+    assert sample_voxeldata_3d.vd.affines == {}
+
+
+def test_named_frames_may_have_different_scales_per_grid(
+    sample_voxeldata_grids: xr.DataArray,
+) -> None:
+    frames = np.stack([np.eye(4), np.diag([2.0, 3.0, 4.0, 1.0])])
+    data = sample_voxeldata_grids.vd.set_affine("lab", frames)
+    np.testing.assert_array_equal(data.vd.get_affine("lab"), frames)
+    assert data.vd.index.equals(sample_voxeldata_grids.vd.index)
+
+
+@pytest.mark.parametrize("inplace", [False, True])
+def test_frame_mutators_and_units_preserve_geometry(
+    sample_voxeldata_3d: xr.DataArray,
+    named_affines: dict[str, np.ndarray],
+    inplace: bool,
+) -> None:
+    data = sample_voxeldata_3d
+    before = data.copy(deep=True)
+    framed = data.vd.set_affine("lab", named_affines["lab"], inplace=inplace)
+    assert (framed is data) is inplace
+    changed = framed.vd.set_units("um", inplace=inplace)
+    assert (changed is framed) is inplace
+    assert changed.vd.units == "um"
+    np.testing.assert_array_equal(changed.vd.get_affine("lab"), named_affines["lab"])
+    np.testing.assert_array_equal(changed.vd.voxel_to_world, before.vd.voxel_to_world)
+    removed = changed.vd.remove_affine("lab", inplace=inplace)
+    assert (removed is changed) is inplace
+    assert removed.vd.affines == {}
+    if not inplace:
+        xr.testing.assert_identical(data, before)
+        assert framed.vd.units == "mm"
+        assert set(changed.vd.affines) == {"lab"}
+
+
+def test_accessor_validation_and_restoration(sample_voxeldata_3d: xr.DataArray) -> None:
+    data = sample_voxeldata_3d.isel(j=2)
+    with pytest.raises(ValueError, match="native voxel dimensions"):
+        data.vd.validate()
+    for restored in (data.vd.canonicalize(), data.vd.ensure()):
+        assert restored.dims == ("k", "j", "i")
+        np.testing.assert_array_equal(restored.coords["j"], [2])
+        np.testing.assert_array_equal(
+            restored.values[:, 0, :], [[8, 9, 10, 11], [20, 21, 22, 23]]
         )
-
-    combined = xr.concat([make(first, 0), make(second, 1)], dim="grid")
-
-    np.testing.assert_allclose(combined.vd.get_affine("lab"), np.stack([first, second]))
-    np.testing.assert_allclose(combined.vd.get_affine("shared"), shared)
-
-
-def test_validate_canonicalize_and_ensure_delegate() -> None:
-    data = _data()
-
-    assert data.vd.validate() is None
-    assert data.vd.canonicalize().dims == ("k", "j", "i")
-    assert data.vd.ensure().dims == ("k", "j", "i")
-
-    invalid = data.isel(k=0).drop_indexes(["z", "y", "x"])
-    with pytest.raises(ValueError):
-        invalid.vd.validate()
+        np.testing.assert_allclose(restored.coords["y"], 24)

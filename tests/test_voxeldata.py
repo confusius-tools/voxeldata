@@ -9,9 +9,9 @@ import xarray as xr
 import voxeldata as vd
 
 
-def test_create_axis_aligned_geometry() -> None:
+def test_create_axis_aligned_geometry(plain_volume: xr.DataArray) -> None:
     data = vd.create_voxeldata(
-        np.zeros((2, 3, 4)),
+        plain_volume.values,
         dims=("k", "j", "i"),
         spacing=(1.0, 2.0, 3.0),
         origin=(10.0, 20.0, 30.0),
@@ -47,51 +47,47 @@ def test_create_oblique_geometry_sel_world() -> None:
         ),
     )
 
-    selected = data.sel(x=3.0)
-    assert selected.sizes == {"k": 4, "j": 5}
-    np.testing.assert_allclose(selected.coords["x"].values, 3.0)
-
-
-def test_grid_dependent_geometry() -> None:
-    affines = np.stack([np.eye(4), np.diag([1.0, 1.0, 1.0, 1.0])])
-    affines[1, :3, 3] = [10.0, 0.0, 0.0]
-    data = vd.create_voxeldata(
-        np.zeros((2, 3, 4, 5)),
-        dims=("grid", "k", "j", "i"),
-        grid=np.array([0, 1]),
-        voxel_to_world=affines,
+    np.testing.assert_allclose(
+        data.coords["z"].isel(k=1, j=2, i=3), -0.1339745962155614
     )
+    np.testing.assert_allclose(data.coords["y"].isel(k=1, j=2, i=3), 2.232050807568877)
+    selected = data.sel(
+        z=xr.Variable("point", [-0.1339745962155614]),
+        y=xr.Variable("point", [2.232050807568877]),
+        x=xr.Variable("point", [3.0]),
+        method="nearest",
+    )
+    assert selected.item() == 45
+
+
+def test_grid_dependent_geometry(sample_voxeldata_grids: xr.DataArray) -> None:
+    data = sample_voxeldata_grids
 
     index = vd.get_voxel_to_world_index(data)
     assert index is not None
     assert index.is_grid_dependent
-    np.testing.assert_allclose(data.coords["z"].values[:, 0, 0, 0], [0.0, 10.0])
+    np.testing.assert_allclose(data.coords["z"].values[:, 0, 0, 0], [10.0, 110.0])
     selected = data.isel(grid=1)
     selected_index = vd.get_voxel_to_world_index(selected)
     assert selected_index is not None
     assert not selected_index.is_grid_dependent
-    np.testing.assert_allclose(selected.coords["z"].isel(k=0, j=0, i=0), 10.0)
+    np.testing.assert_allclose(selected.coords["z"].isel(k=0, j=0, i=0), 110.0)
+    np.testing.assert_array_equal(selected.values[0, 0], [24, 25, 26, 27])
 
 
-def test_validate_rejects_non_voxeldata() -> None:
-    plain = xr.DataArray(
-        np.zeros((2, 3, 4)),
-        dims=("k", "j", "i"),
-        coords={"k": np.arange(2), "j": np.arange(3), "i": np.arange(4)},
-    )
+def test_validate_rejects_non_voxeldata(plain_volume: xr.DataArray) -> None:
     with pytest.raises(ValueError, match="VoxelToWorldIndex"):
-        vd.validate_voxeldata(plain)
+        vd.validate_voxeldata(plain_volume)
 
     with pytest.raises(TypeError, match="xarray.DataArray"):
         vd.validate_voxeldata(cast(Any, np.zeros((2, 3, 4))))
 
 
-def test_validate_rejects_wrong_voxel_dimensions() -> None:
-    data = vd.create_voxeldata(
-        np.zeros((3, 4)), dims=("j", "i"), spacing=(1.0, 1.0, 1.0)
-    )
+def test_validate_rejects_wrong_voxel_dimensions(
+    sample_voxeldata_3d: xr.DataArray,
+) -> None:
     with pytest.raises(ValueError, match="native voxel dimensions"):
-        vd.validate_voxeldata(data.isel(k=0, drop=True))
+        vd.validate_voxeldata(sample_voxeldata_3d.isel(k=0, drop=True))
 
 
 @pytest.mark.parametrize(
@@ -102,29 +98,27 @@ def test_validate_rejects_wrong_voxel_dimensions() -> None:
         ("k", "j", "i", "component"),
     ],
 )
-def test_validate_rejects_wrong_spatial_block(dims: tuple[str, ...]) -> None:
-    data = vd.create_voxeldata(
-        np.zeros((2, 3, 4, 5)),
-        dims=("component", "k", "j", "i"),
-        spacing=(1.0, 1.0, 1.0),
-    )
+def test_validate_rejects_wrong_spatial_block(
+    sample_voxeldata_3d: xr.DataArray, dims: tuple[str, ...]
+) -> None:
+    data = sample_voxeldata_3d.expand_dims(component=[0, 1])
     with pytest.raises(ValueError, match="dimensions must end with"):
         vd.validate_voxeldata(data.transpose(*dims))
 
 
-def test_canonicalize_restores_scalar_indexed_dimension() -> None:
-    data = vd.create_voxeldata(
-        np.zeros((3, 4, 5)),
-        dims=("k", "j", "i"),
-        spacing=(1.0, 2.0, 3.0),
-    )
-    sliced = data.isel(j=2)
+def test_canonicalize_restores_scalar_indexed_dimension(
+    sample_voxeldata_3d: xr.DataArray,
+) -> None:
+    sliced = sample_voxeldata_3d.isel(j=2)
     assert "j" not in sliced.dims
 
     restored = vd.ensure_voxeldata(sliced)
     assert restored.dims == ("k", "j", "i")
     assert restored.sizes["j"] == 1
-    np.testing.assert_allclose(restored.coords["y"].isel(k=0, j=0, i=0), 4.0)
+    np.testing.assert_allclose(restored.coords["y"].isel(k=0, j=0, i=0), 24.0)
+    np.testing.assert_array_equal(
+        restored.values[:, 0], [[8, 9, 10, 11], [20, 21, 22, 23]]
+    )
 
 
 def test_create_moves_only_spatial_dims() -> None:
@@ -136,17 +130,18 @@ def test_create_moves_only_spatial_dims() -> None:
     assert data.dims == ("component", "k", "j", "i")
 
 
-def test_apply_affine_shifts_world_coordinates() -> None:
-    data = vd.create_voxeldata(
-        np.zeros((3, 4, 5)), dims=("k", "j", "i"), voxel_to_world=np.eye(4)
-    )
+def test_apply_affine_shifts_world_coordinates(
+    sample_voxeldata_3d: xr.DataArray,
+) -> None:
+    data = sample_voxeldata_3d
     shift = np.eye(4)
     shift[:3, 3] = [10.0, 5.0, -2.0]
 
     shifted = vd.apply_affine(data, shift)
-    np.testing.assert_allclose(shifted.coords["z"].isel(k=0, j=0, i=0), 10.0)
-    np.testing.assert_allclose(shifted.coords["y"].isel(k=0, j=0, i=0), 5.0)
-    np.testing.assert_allclose(shifted.coords["x"].isel(k=0, j=0, i=0), -2.0)
+    np.testing.assert_allclose(shifted.coords["z"].isel(k=0, j=0, i=0), 20.0)
+    np.testing.assert_allclose(shifted.coords["y"].isel(k=0, j=0, i=0), 25.0)
+    np.testing.assert_allclose(shifted.coords["x"].isel(k=0, j=0, i=0), 28.0)
+    np.testing.assert_array_equal(shifted.values, np.arange(24).reshape(2, 3, 4))
 
 
 def test_reindex_voxels_rebases_coordinates() -> None:

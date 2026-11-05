@@ -393,7 +393,9 @@ def reindex_voxels_like(
     built with dense labels). This verifies the two occupy the same world grid, then
     relabels `data`'s voxel coordinates and affine to match `reference`'s exactly, so
     the two become directly alignable (`.sel()`, arithmetic, `xarray.align`, ...) by
-    voxel label as well as by world position.
+    voxel label as well as by world position. Grid-dependent inputs must have
+    matching grid labels in the same order. Named frames remain those of `data`,
+    since relabeling voxel coordinates does not change its world frame.
 
     Parameters
     ----------
@@ -439,9 +441,19 @@ def reindex_voxels_like(
             f"got {shape!r} and {reference_shape!r}."
         )
 
+    has_grid = GRID_DIM in data.dims
+    if has_grid != (GRID_DIM in reference.dims) or (
+        has_grid
+        and not np.array_equal(
+            data.coords[GRID_DIM].values, reference.coords[GRID_DIM].values
+        )
+    ):
+        raise ValueError("data and reference must have the same grid coordinates.")
+    world_dims = (GRID_DIM, *voxel_dims) if has_grid else voxel_dims
+
     for name in WORLD_DIMS:
-        data_values = data.coords[name].transpose(*voxel_dims).values
-        reference_values = reference.coords[name].transpose(*voxel_dims).values
+        data_values = data.coords[name].transpose(*world_dims).values
+        reference_values = reference.coords[name].transpose(*world_dims).values
         if not np.allclose(data_values, reference_values, atol=atol):
             raise ValueError(
                 f"data and reference are not aligned in world space: coordinate "
@@ -454,5 +466,5 @@ def reindex_voxels_like(
         relabeled,
         get_voxel_to_world_affine(reference),
         units=get_voxel_to_world_units(reference),
-        named_affines=_require_voxel_to_world_index(reference).named_affines,
+        named_affines=_require_voxel_to_world_index(data).named_affines,
     )

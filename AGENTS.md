@@ -46,10 +46,23 @@ still pending.
   accessors), `docs/stylesheets/extra.css`. Docs use the ConfUSIus visual style
   (Space Grotesk + JetBrains Mono, custom light/dark palette, hero index, nav tabs,
   admonition colors, rich Markdown extensions).
+- `.github/workflows/lint.yml` and `test.yml` run on main pushes, PRs, manual
+  dispatch, and reusable calls. Tests cover Python 3.11–3.14 on Linux/macOS/Windows.
+- `.github/workflows/publish.yml` publishes `v*` tags through PyPI Trusted
+  Publishing after calling lint/tests and checking tag/version agreement, docs,
+  and build. Requires the publisher setup described below.
 - Renamed the geometry dimension and public API to `grid`; arbitrary leading
   dimension order is accepted, while canonicalization uses `grid, time`.
-- Verified: `ruff`, `ty`, `numpydoc`, `codespell`, `pytest` (34 passing),
-  `uv build`, `zensical build --strict`.
+- Ported modality-independent constructor, geometry, validation, bounding-box,
+  and reindexing regressions from ConfUSIus. Shared function-scoped fixtures live
+  in `tests/conftest.py`; distinguishable samples and noncommuting transforms
+  avoid vacuous selection and composition checks.
+- Fixed `reindex_voxels_like` to retain the source's named frames and compare
+  grid-dependent world coordinates, rejecting mismatched grid labels.
+- Verified: `ruff`, `ty`, `numpydoc`, `codespell`, pre-commit hooks, `pytest`
+  (154 passing on Python 3.11–3.14 on Linux; 90% statement coverage), `uv build`,
+  `zensical build --strict`. Temporary fault injection confirmed tests catch reversed
+  relative transforms and swapped world-coordinate outputs.
 
 ### Remaining
 
@@ -63,15 +76,11 @@ still pending.
      geometry to `voxeldata`; do not duplicate geometry logic.
 2. **Update voxreg** to consume `voxeldata` named affines (`data.vd.to(other, via)`)
    and drop `attrs["affines"]`.
-3. **Tests to add** (current `tests/test_accessors.py` covers the main paths):
-   - Named-affine validation errors: wrong shape, non-finite, bad last row, 3D
-     frame without grid-dependent geometry.
-   - `concat` error paths: different frame names, differing shared frames, mixed
-     2D/3D frames.
-   - `isel(grid=slice/list)` slicing named-affine stacks.
-   - `inplace=True` behaviors.
-   - `get_relative_affine` missing-frame `KeyError`.
-4. Optionally add a `CHANGELOG.md` and CI workflow.
+3. Optional further test ports: advanced vectorized indexers and lazy-array
+   backend behavior. The standalone suite does not require Dask or fUSI metadata.
+4. Configure the GitHub `pypi` environment and PyPI Trusted Publisher before the
+   first release. The workflows are present; no release has been triggered.
+5. Optionally add a `CHANGELOG.md`.
 
 ## Design decisions (do not silently change)
 
@@ -109,7 +118,9 @@ still pending.
 - `concat` along `grid`: every index must carry the same frame names; all-2D frames
   must be `allclose` (keep one copy); all-3D frames concatenate along axis 0; mixing
   2D and 3D raises.
-- `set_units`, `reindex_voxels`, `reindex_voxels_like` preserve named frames.
+- `set_units`, `reindex_voxels`, `reindex_voxels_like` preserve the input's named
+  frames. `reindex_voxels_like` never copies the reference's named frames; inputs
+  with grid-dependent geometry must carry identical grid labels in the same order.
 - For ConfUSIus compatibility, `.vd.spacing` and `.vd.origin` cover **all**
   dimensions; `.vd.direction`, `.vd.bounding_box`, `.vd.voxel_to_world`, and
   `.vd.scalings` are spatial-only.
@@ -153,7 +164,23 @@ Follow the user's global Python guidelines plus ConfUSIus conventions:
   - Reference private objects as plain backticks, not `[][]` links.
 - `ruff` lint/format, `ty` type check, `numpydoc` validation, `codespell`.
 - Comments end with a period; no comments that duplicate code.
-- Tests: public API only, meaningful assertions, `pytest`, seeded RNG, small arrays.
+- Tests: public API only, meaningful assertions, `pytest`, seeded RNG when needed,
+  small arrays. Reuse global fixtures from `tests/conftest.py` for common geometry;
+  keep inputs specific to a constructor/error case local. Fixtures are function
+  scoped so mutation tests cannot leak state. Use distinct values for data-order
+  assertions and noncommuting matrices for composition assertions.
+
+## Publishing setup
+
+- Create the GitHub environment `pypi`; restrict deployments to `v*` release tags
+  and optionally require approval.
+- Register a PyPI Trusted Publisher (a pending publisher for the first release):
+  project `voxeldata`, owner `confusius-tools`, repository `voxeldata`, workflow
+  filename `publish.yml`, environment `pypi`. No API token is needed.
+- Set `project.version`, run `uv lock`, commit/push, then push a matching `vVERSION`
+  tag. The initial version is `0.1.0`; its matching tag is `v0.1.0`.
+- Publishing is permanent. Use a new version for subsequent releases.
+- Keep publishing instructions out of the README.
 
 ## Commands
 
@@ -192,9 +219,15 @@ uv run pytest tests/test_accessors.py::test_apply_named_affine_makes_it_identity
 - `src/voxeldata/create.py` — `create_voxeldata(..., affines=None)`.
 - `src/voxeldata/accessors.py` — `VoxelDataAccessor` and `_maybe_inplace`.
 - `src/voxeldata/_coordinates.py` — `get_coordinate_origins`.
-- `tests/test_accessors.py` — 12 accessor/named-affine tests.
-- `tests/test_voxeldata.py` — 22 core geometry/creation/validation cases, including
-  flexible leading order, canonicalization, per-grid timestamps, and affine stacks.
+- `tests/conftest.py` — shared plain, anisotropic, oblique, irregular, time-series,
+  and grid-dependent volumes, plus noncommuting named frames.
+- `tests/test_accessors.py` — accessor contracts, named-frame validation,
+  composition, slicing, concatenation, and in-place isolation.
+- `tests/test_voxeldata.py` — core smoke tests and flexible dimension ordering.
+- `tests/test_create.py` — constructor padding, ordering, metadata, and errors.
+- `tests/test_geometry.py` — world selection, grid geometry, and alignment.
+- `tests/test_validation.py` — coordinate, spacing, time, dtype, and recovery checks.
+- `tests/test_affine.py` — independently evaluated bounds, reindexing, and frames.
 - `docs/api/accessors.md` + `zensical.toml` nav entry.
 
 ## Known gotchas
