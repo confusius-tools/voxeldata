@@ -178,7 +178,7 @@ Follow the user's global Python guidelines plus ConfUSIus conventions:
   project `voxeldata`, owner `confusius-tools`, repository `voxeldata`, workflow
   filename `publish.yml`, environment `pypi`. No API token is needed.
 - Set `project.version`, run `uv lock`, commit/push, then push a matching `vVERSION`
-  tag. The initial version is `0.1.0`; its matching tag is `v0.1.0`.
+  tag. The initial version is `0.0.1`; its matching tag is `v0.0.1`.
 - Publishing is permanent. Use a new version for subsequent releases.
 - Keep publishing instructions out of the README.
 
