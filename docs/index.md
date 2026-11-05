@@ -14,10 +14,28 @@ hide:
 
 <p class="hero-tagline">A small, modality-independent data model for spatially referenced voxel arrays, built on xarray.</p>
 
+<div class="hero-badges">
+  <a href="https://pypi.org/project/voxeldata/" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/pypi/v/voxeldata?style=flat-square&color=d93a54&label=PyPI" alt="PyPI version">
+  </a>
+  <a href="https://pypi.org/project/voxeldata/" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/pypi/pyversions/voxeldata?style=flat-square&color=0099e5&logo=python&logoColor=white" alt="Python versions">
+  </a>
+  <a href="https://github.com/confusius-tools/voxeldata/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/github/license/confusius-tools/voxeldata?style=flat-square&color=3ad9a4" alt="License">
+  </a>
+  <a href="https://doi.org/10.64898/2026.10.27.762250" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/badge/DOI-10.64898%2F2026.10.27.762250-8b7ff7?style=flat-square" alt="ConfUSIus preprint DOI">
+  </a>
+  <a href="https://discord.gg/mZd87tgmy2" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/badge/Discord-join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord">
+  </a>
 </div>
 
-!!! info "Beta Status"
-    VoxelData is in **beta** and under active development. APIs may still evolve.
+</div>
+
+!!! info "Alpha Status"
+    VoxelData is in **alpha** and under active development. APIs may still evolve.
 
 ## :lucide-box: The model
 

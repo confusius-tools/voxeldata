@@ -1,3 +1,9 @@
+[![PyPI version](https://img.shields.io/pypi/v/voxeldata?style=flat-square&color=d93a54&label=PyPI)](https://pypi.org/project/voxeldata/)
+[![Python versions](https://img.shields.io/pypi/pyversions/voxeldata?style=flat-square&color=0099e5&logo=python&logoColor=white)](https://pypi.org/project/voxeldata/)
+[![License](https://img.shields.io/github/license/confusius-tools/voxeldata?style=flat-square&color=3ad9a4)](https://github.com/confusius-tools/voxeldata/blob/main/LICENSE)
+[![ConfUSIus preprint DOI](https://img.shields.io/badge/DOI-10.64898%2F2026.10.27.762250-8b7ff7?style=flat-square)](https://doi.org/10.64898/2026.10.27.762250)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/mZd87tgmy2)
+
 # VoxelData
 
 **VoxelData** is a small, modality-independent data model for spatially referenced
