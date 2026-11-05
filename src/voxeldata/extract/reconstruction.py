@@ -3,7 +3,6 @@
 import numpy as np
 import xarray as xr
 
-from voxeldata._dims import VOXEL_DIMS
 from voxeldata.geometry import (
     attach_voxel_to_world_index,
     get_voxel_to_world_affine,
@@ -30,8 +29,8 @@ def unmask(
         DataArray must have `space` last; its leading dimension coordinates,
         including timestamp attributes, are preserved.
     mask : xarray.DataArray
-        Spatial-only boolean or binary numeric VoxelData mask. Supplies native
-        voxel labels, units, primary geometry, and named frames.
+        Boolean or binary numeric VoxelData mask. Supplies native voxel labels,
+        any extra feature axes, units, geometry dependencies, and named frames.
     new_dims : list[str], optional
         Leading dimension names for NumPy input. If not provided, use `dim_0`,
         `dim_1`, and so on. Ignored for DataArray input.
@@ -46,8 +45,8 @@ def unmask(
     Returns
     -------
     xarray.DataArray
-        Samples restored into the mask's complete spatial grid, with nonspatial
-        dimensions retained. Geometry and named frames are supplied by the mask.
+        Samples restored into the mask's complete grid, including extra feature
+        axes. Geometry dependencies and named frames are supplied by the mask.
 
     Raises
     ------
@@ -65,10 +64,6 @@ def unmask(
     """
     mask = ensure_voxeldata(mask, allow_extra_dims=True)
     check_mask_dtype(mask, "mask")
-    if tuple(mask.dims) != VOXEL_DIMS:
-        raise ValueError(
-            "Reconstruction requires a spatial-only mask; select nonspatial mask dimensions first."
-        )
     mask_values = mask.values
 
     n_voxels_mask = np.int64(np.count_nonzero(mask_values)).item()

@@ -45,12 +45,13 @@ restored = vd.unmask(signals, mask)         # (time, k, j, i).
 - Label aggregation excludes zero/background. Flat maps identify regions by their
   integer ids. Stacked masks use their `mask` coordinate to identify regions;
   overlapping layers and repeated or negative nonzero ids are supported.
-- Masks must be spatial-only. Labels may additionally have a leading `mask` axis.
-  Nonspatial signal axes such as time, channel, grid, or view are retained, with
-  the model's existing canonical leading-axis ordering applied first.
+- Binary masks flatten all their dimensions into `space`, including any extra
+  feature/geometry axes such as channel or grid. Other signal dimensions are
+  retained. Label maps are spatial-only, optionally with a leading `mask` axis.
+  The model's existing canonical leading-axis ordering is applied first.
 - A shared spatial mask/map may span geometry dependencies only when the affine
   matrices agree. Select a geometry first when its physical grid differs. Geometry
-  axes retain their ordinary indexes during spatial stacking and extraction.
+  axes retain their ordinary indexes when not included in the flattened mask.
 - Signal data remain lazy for Dask-backed extraction and aggregation; mask/label
   values are evaluated eagerly. With flox acceleration, median requires each region to fit
   within an individual Dask chunk. Explicitly rechunk spatial axes when necessary;

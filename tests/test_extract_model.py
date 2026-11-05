@@ -108,6 +108,27 @@ def test_shared_mask_and_labels_preserve_geometry_axes(
     )
 
 
+def test_mask_includes_geometry_axes_and_restores_frame_stacks(multigeometry_data):
+    data = multigeometry_data
+    mask = data.isel(channel=0, drop=True).copy(
+        data=np.zeros(data.shape[1:], dtype=bool)
+    )
+    mask.data[..., 0, 0, 0] = True
+    signals = vd.extract_with_mask(data, mask)
+    canonical_mask = mask.vd.ensure()
+    ordered = data.transpose("channel", *canonical_mask.dims)
+    np.testing.assert_array_equal(signals, ordered.values[:, canonical_mask.values])
+    restored = vd.unmask(signals, mask)
+    restored.vd.validate()
+    np.testing.assert_array_equal(
+        restored.transpose(*data.dims), np.where(mask.values, data.values, 0)
+    )
+    assert restored.vd.geometry_dims == data.vd.geometry_dims
+    np.testing.assert_array_equal(restored.vd.voxel_to_world, data.vd.voxel_to_world)
+    for name, frame in data.vd.affines.items():
+        np.testing.assert_array_equal(restored.vd.get_affine(name), frame)
+
+
 def test_shared_mask_rejects_varying_geometry(multigeometry_data):
     data = multigeometry_data
     mask = xr.DataArray(

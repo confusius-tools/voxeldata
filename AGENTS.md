@@ -35,7 +35,9 @@ The initial package (`0.0.1`) is published. ConfUSIus integration is in draft PR
   reductions and overlapping maps with neither flox nor Dask installed.
 - Extraction keeps signal data lazy; label/mask metadata are eager. Flox median
   needs groups contained within chunks; rechunk explicitly. `unmask` is eager and
-  positional, preserves the mask's named frames, and supports spatial-only masks.
+  positional, and preserves mask geometry dependencies and named frames. Binary
+  masks may include extra feature/geometry axes, all flattened into `space`;
+  label maps are spatial-only, optionally stacked along `mask`.
 - ConfUSIus delegation is being wired on `feat/voxeldata-integration` for draft
   PR #569. Thin adapters retain acquisition defaults/validation; generic extraction
   and alignment belong here. Update its immutable Git pin before verification.

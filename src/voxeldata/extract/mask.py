@@ -2,48 +2,44 @@
 
 import xarray as xr
 
-from voxeldata._dims import VOXEL_DIMS
 from voxeldata.masks import ensure_mask
 from voxeldata.validation import ensure_voxeldata
 
 
 def extract_with_mask(data: xr.DataArray, mask: xr.DataArray) -> xr.DataArray:
-    """Extract voxel samples with a spatial binary mask.
+    """Extract samples over the dimensions of a binary VoxelData mask.
 
-    Native voxel dimensions are flattened into `space`, retaining all nonspatial
-    dimensions and their coordinates. Selected native voxel labels form a
-    MultiIndex, suitable for `.unstack("space")` or `unmask` reconstruction.
+    Mask dimensions are flattened into `space`, retaining other data dimensions
+    and their coordinates. Selected mask-axis labels form a MultiIndex, suitable
+    for `.unstack("space")` or `unmask` reconstruction.
 
     Parameters
     ----------
     data : xarray.DataArray
         VoxelData array, optionally with nonspatial dimensions.
     mask : xarray.DataArray
-        Spatial-only VoxelData mask on the same physical grid. Must be boolean or
-        binary numeric: zero is background and one distinct nonzero value selects
-        voxels. A shared mask can span geometry dependencies only if their affine
-        matrices agree. Select a geometry first when its physical grid differs.
+        VoxelData mask on the same physical grid. Must be boolean or binary
+        numeric: zero is background and one distinct nonzero value selects samples.
+        Extra mask axes, such as grid or channel, are flattened along with native
+        voxel axes. A shared mask can span geometry dependencies only if their
+        affine matrices agree; otherwise include or select those dependencies.
 
     Returns
     -------
     xarray.DataArray
-        Samples with the native voxel dimensions replaced by `space`. Signal data
+        Samples with mask dimensions replaced by `space`. Signal data
         remain lazy when Dask-backed; mask values are evaluated for selection.
 
     Raises
     ------
     ValueError
-        If geometry, native labels, or units do not match, or the mask has
-        nonspatial dimensions. Scalar-selected voxel axes are restored first.
+        If geometry, dimension labels, or units do not match.
+        Scalar-selected voxel axes are restored first.
     TypeError
         If the mask is not a boolean or binary numeric VoxelData array.
     """
     data = ensure_voxeldata(data, allow_extra_dims=True)
     mask = ensure_mask(mask, data, "mask")
-    if tuple(mask.dims) != VOXEL_DIMS:
-        raise ValueError(
-            "Extraction requires a spatial-only mask; select nonspatial mask dimensions first."
-        )
 
     # ensure_mask() already checked mask and data share the same voxel grid (same
     # k/j/i coordinates and voxel_to_world affine), so mask.values.ravel() is already

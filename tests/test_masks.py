@@ -77,17 +77,19 @@ def test_alignment_handles_transposed_native_axes(
     vd.check_spatial_alignment(mask, sample_voxeldata_3d, "mask")
 
 
-@pytest.mark.parametrize("operation", [vd.extract_with_mask, vd.unmask])
-def test_extraction_and_reconstruction_reject_nonspatial_masks(
-    operation, sample_voxeldata_3dt, make_sample_voxeldata_mask
+def test_mask_feature_axes_are_flattened_and_reconstructed(
+    sample_voxeldata_3dt, make_sample_voxeldata_mask
 ):
-    mask = make_sample_voxeldata_mask().expand_dims(channel=[1, 2])
-    if operation is vd.unmask:
-        args = (np.array([]), mask)
-    else:
-        args = (sample_voxeldata_3dt, mask)
-    with pytest.raises(ValueError, match="spatial-only mask"):
-        operation(*args)
+    data = sample_voxeldata_3dt.expand_dims(channel=[10, 20])
+    mask = make_sample_voxeldata_mask().expand_dims(channel=[10, 20]).copy(deep=True)
+    mask.data[0, 0, 0, 0] = mask.data[1, 1, 2, 3] = True
+    signals = vd.extract_with_mask(data, mask)
+    ordered = data.transpose("time", "channel", *vd.VOXEL_DIMS)
+    np.testing.assert_array_equal(signals, ordered.values[:, mask.values])
+    assert signals.indexes["space"].names == ["channel", "k", "j", "i"]
+    restored = vd.unmask(signals, mask)
+    expected = np.where(mask.values, ordered.values, 0)
+    np.testing.assert_array_equal(restored.transpose(*ordered.dims), expected)
 
 
 def test_labels_reject_uninterpreted_nonspatial_axis(
