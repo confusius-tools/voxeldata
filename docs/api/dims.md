@@ -1,0 +1,3 @@
+# Dimensions
+
+::: voxeldata._dims

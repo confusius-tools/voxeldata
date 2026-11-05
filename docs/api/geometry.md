@@ -1,0 +1,3 @@
+# Geometry
+
+::: voxeldata.geometry

@@ -1,0 +1,83 @@
+[project]
+name = "voxeldata"
+version = "0.1.0"
+description = "Spatially referenced voxel arrays built on xarray."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [{ name = "Samuel Le Meur-Diebolt" }]
+requires-python = ">=3.11,<3.15"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Typing :: Typed",
+]
+dependencies = [
+    "numpy>=2.3.4",
+    "pandas>=2.2.0",
+    "xarray>=2025.1.0",
+]
+
+[build-system]
+requires = ["uv-build>=0.9.5,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "codespell>=2.3.0",
+    "numpydoc>=1.11.0",
+    "prek>=0.4.8",
+    "pytest>=9.1.1",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.16.5",
+    "ty>=0.0.77,<0.1.0",
+    "zensical>=0.0.67",
+    "mkdocstrings[python]>=1.0.4",
+]
+
+[tool.numpydoc_validation]
+exclude = [
+    '\.__init__$',
+    '\._.*$',
+]
+checks = [
+    "all",
+    "GL01",
+    "ES01",
+    "SA01",
+    "EX01",
+]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--import-mode=importlib",
+    "--showlocals",
+    "--cov=voxeldata",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+]
+filterwarnings = ["error"]
