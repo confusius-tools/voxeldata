@@ -14,11 +14,11 @@ package at:
 Source project: `/home/sdiebolt/Documents/Work/cortexlab/confusius-tools/confusius`.
 Downstream consumer: `/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg`.
 
-The initial package (`0.0.1`) is published. The user authorized release `0.0.3`
-from this feature branch, including named geometry, extraction, and the optional
-`accel`/`lazy`/`all` extras. Publishing is tag-driven; check the `v0.0.3` workflow
-and PyPI before declaring it complete. ConfUSIus integration remains in draft PR
-#569; replace its temporary Git pin with the published version after release.
+VoxelData `0.0.3` is published on PyPI and GitHub, from tag `v0.0.3` at commit
+`e1c4ca9`. It includes named geometry, extraction, N-D timestamps, and optional
+`accel`/`lazy`/`all` extras. Publish workflow run `42112747651` passed all 12 OS/Python
+combinations, lint, docs, build, and trusted publishing. ConfUSIus draft PR #569
+now depends on published `voxeldata>=0.0.3`; the temporary Git pin is removed.
 
 ## Status
 
@@ -41,15 +41,16 @@ and PyPI before declaring it complete. ConfUSIus integration remains in draft PR
   positional, and preserves mask geometry dependencies and named frames. Binary
   masks may include extra feature/geometry axes, all flattened into `space`;
   label maps are spatial-only, optionally stacked along `mask`.
-- ConfUSIus delegation is pushed on `feat/voxeldata-integration`, commit `c2ca871`,
-  in draft PR #569. Thin adapters retain acquisition defaults/validation and
-  `.fusi.extract`; generic extraction/alignment belong here. Its immutable Git pin
-  is `c859738`, verified from the installed package. All 3,055 downstream tests pass
-  (including napari/integration/visual regressions), with 98% coverage. Source/new
-  boundary-test Ruff, ty, docstrings, spelling, strict docs, and build pass.
+- ConfUSIus integration is pushed on `feat/voxeldata-integration`, commit `dccb6f6`,
+  in draft PR #569. Extraction is directly re-exported; acquisition-aware mask/label
+  validation, constructor defaults, and slice timing stay in ConfUSIus. Its installed
+  dependency was verified as registry VoxelData 0.0.3 (no `direct_url.json`). All
+  3,058 downstream tests pass, including napari/integration/visual regressions, with
+  98% coverage. Source/changed-boundary-test Ruff, ty, docstrings, spelling, strict
+  docs, and build pass.
 - PR #569 remains draft. No checks were reported for its new head immediately
   after push; older successful remote runs do not verify the current commits.
-  Release `0.0.3` is authorized; do not publish subsequent versions without approval.
+  Release `0.0.3` is complete; do not publish subsequent versions without approval.
   ConfUSIus's four untracked benchmark files remain untouched.
 - New API docs: `docs/api/extract.md`, `docs/api/masks.md`. See `ROADMAP.md`.
 
@@ -68,9 +69,10 @@ and PyPI before declaring it complete. ConfUSIus integration remains in draft PR
   re-exports `voxeldata.extract`. `.fusi.extract` imports public `confusius.extract`
   exports. Generic extraction no longer defaults or validates acquisition metadata.
   Explicit ConfUSIus mask/label validators remain acquisition-aware.
-- Focused downstream proof against the candidate wheel: 238 tests passed. Docs
-  need `voxeldata` preloaded in mkdocstrings to resolve imported public exports.
-  Publish 0.0.3 before replacing the draft's Git dependency with the registry release.
+- Focused downstream proof: 238 cases, then 3,058 full-suite cases against the
+  registry release. Docs preload `voxeldata` in mkdocstrings to resolve imported
+  public exports. PyPI base/accel/lazy/all installations passed backend-isolation
+  and numerical smoke checks; all five combinations passed candidate-wheel checks.
 
 ### Done
 
@@ -118,20 +120,19 @@ and PyPI before declaring it complete. ConfUSIus integration remains in draft PR
 
 ### Remaining
 
-1. Finish publishing authorized VoxelData 0.0.3, replace ConfUSIus draft PR #569's
-   Git pin with that registry release, verify the installed dependency and full
-   downstream suite, and push its direct-extraction-export follow-up. Do not merge
-   either feature branch or publish further versions without authorization.
+1. Review/merge standalone and ConfUSIus feature branches only when authorized.
+   Release 0.0.3 and its adoption in draft PR #569 are complete. Check GitHub CI for
+   ConfUSIus head `dccb6f6`; local full-suite verification is complete.
 2. **Update voxreg** to consume `voxeldata` named affines (`data.vd.to(other, via)`)
    and drop `attrs["affines"]`.
 3. `tests/test_geometry_dims.py` covers named geometry dependencies, vectorized
    geometry indexing, lazy signal data, native voxel labels, composition, bounds,
    reindexing, and pickle round-trips. Run `uv run --with 'dask[array]' pytest -q`
    to exercise the optional lazy-backend test without a new project dependency.
-   The suite has 344 cases after the N-D timestamp extension. Previous full
-   ConfUSIus proof predates direct extraction re-exports; reverify that follow-up.
-4. Trusted Publisher is configured. The user authorized release 0.0.3; tag matching
-   the project version only after local checks pass and verify the publish workflow.
+   The suite has 344 cases after the N-D timestamp extension, passing on Python
+   3.11–3.14 across Linux, Windows, and macOS in the successful release workflow.
+4. Trusted Publisher is configured and release 0.0.3 is complete. Any future release
+   requires fresh authorization, a matching version tag, and successful publishing.
 5. Optionally add a `CHANGELOG.md`.
 
 ## Design decisions (do not silently change)

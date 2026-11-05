@@ -68,9 +68,10 @@ module now provides:
 - Port applicable ConfUSIus tests and add multi-geometry and Dask regressions with
   independent extraction/reconstruction oracles.
 - ConfUSIus draft PR #569 now uses thin acquisition-aware adapters and retains
-  `.fusi.extract`, without duplicated extraction/alignment algorithms. Its Git pin
-  points to the verified implementation; review, release, and published-version
-  dependency replacement remain.
+  `.fusi.extract`, without duplicated extraction/alignment algorithms. It now
+  depends on published `voxeldata>=0.0.3`; extraction is directly re-exported while
+  acquisition-specific defaults and validation remain explicit in ConfUSIus.
+  Review and merge remain.
 - Public functions are in `voxeldata.extract`, with top-level re-exports. Generic
   validators live in `voxeldata.masks`. No extraction accessor methods or
   compatibility aliases are added.
