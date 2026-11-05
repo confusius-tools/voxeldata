@@ -41,13 +41,13 @@ prerequisite.
 
 ## 2. Move generic extraction from ConfUSIus
 
-**In progress: standalone implementation and test port. Downstream delegation remains.**
+**Implemented in the feature branch; downstream delegation is in draft PR #569.**
 
 The functions in `confusius.extract` operate on spatially referenced voxel arrays,
 not specifically on functional ultrasound data. The standalone `voxeldata.extract`
 module now provides:
 
-- `extract_with_mask`: select voxel samples while retaining all nonspatial axes.
+- `extract_with_mask`: flatten selected mask axes, retaining other signal axes.
 - `extract_with_labels`: aggregate voxel samples by flat label maps or overlapping
   stacked masks, retaining region identifiers and nonspatial axes.
 - `unmask`: reconstruct spatial arrays from extracted samples and a mask.
@@ -66,8 +66,10 @@ module now provides:
   Native and accelerated reductions share the same public API and numerical tests.
 - Port applicable ConfUSIus tests and add multi-geometry and Dask regressions with
   independent extraction/reconstruction oracles.
-- Update ConfUSIus consumers and its `.fusi` extraction layer to delegate to
-  VoxelData, removing duplicate implementation rather than creating a second one.
+- ConfUSIus draft PR #569 now uses thin acquisition-aware adapters and retains
+  `.fusi.extract`, without duplicated extraction/alignment algorithms. Its Git pin
+  points to the verified implementation; review, release, and published-version
+  dependency replacement remain.
 - Public functions are in `voxeldata.extract`, with top-level re-exports. Generic
   validators live in `voxeldata.masks`. No extraction accessor methods or
   compatibility aliases are added.

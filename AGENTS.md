@@ -38,9 +38,16 @@ The initial package (`0.0.1`) is published. ConfUSIus integration is in draft PR
   positional, and preserves mask geometry dependencies and named frames. Binary
   masks may include extra feature/geometry axes, all flattened into `space`;
   label maps are spatial-only, optionally stacked along `mask`.
-- ConfUSIus delegation is being wired on `feat/voxeldata-integration` for draft
-  PR #569. Thin adapters retain acquisition defaults/validation; generic extraction
-  and alignment belong here. Update its immutable Git pin before verification.
+- ConfUSIus delegation is pushed on `feat/voxeldata-integration`, commit `c2ca871`,
+  in draft PR #569. Thin adapters retain acquisition defaults/validation and
+  `.fusi.extract`; generic extraction/alignment belong here. Its immutable Git pin
+  is `c859738`, verified from the installed package. All 3,055 downstream tests pass
+  (including napari/integration/visual regressions), with 98% coverage. Source/new
+  boundary-test Ruff, ty, docstrings, spelling, strict docs, and build pass.
+- PR #569 remains draft. No checks were reported for its new head immediately
+  after push; older successful remote runs do not verify the current commits.
+  No new release was published. ConfUSIus's four untracked benchmark files remain
+  untouched.
 - New API docs: `docs/api/extract.md`, `docs/api/masks.md`. See `ROADMAP.md`.
 
 ### Done
