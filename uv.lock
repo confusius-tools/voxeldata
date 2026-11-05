@@ -1547,13 +1547,25 @@ wheels = [
 
 [[package]]
 name = "voxeldata"
-version = "0.0.1"
+version = "0.0.3"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pandas" },
     { name = "xarray" },
+]
+
+[package.optional-dependencies]
+accel = [
+    { name = "flox" },
+]
+all = [
+    { name = "dask", extra = ["array"] },
+    { name = "flox" },
+]
+lazy = [
+    { name = "dask", extra = ["array"] },
 ]
 
 [package.dev-dependencies]
@@ -1573,10 +1585,14 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dask", extras = ["array"], marker = "extra == 'lazy'", specifier = ">=2025.9.0" },
+    { name = "flox", marker = "extra == 'accel'", specifier = ">=0.11.1" },
     { name = "numpy", specifier = ">=2.3.4" },
     { name = "pandas", specifier = ">=2.2.0" },
+    { name = "voxeldata", extras = ["accel", "lazy"], marker = "extra == 'all'" },
     { name = "xarray", specifier = ">=2025.1.0" },
 ]
+provides-extras = ["accel", "lazy", "all"]
 
 [package.metadata.requires-dev]
 dev = [

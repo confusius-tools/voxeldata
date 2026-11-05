@@ -14,9 +14,11 @@ package at:
 Source project: `/home/sdiebolt/Documents/Work/cortexlab/confusius-tools/confusius`.
 Downstream consumer: `/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg`.
 
-The initial package (`0.0.1`) is published. ConfUSIus integration is in draft PR
-#569. The current feature generalizes geometry to arbitrary ordered
-`geometry_dims`, while preserving legacy grid/probe-pose stack inference.
+The initial package (`0.0.1`) is published. The user authorized release `0.0.3`
+from this feature branch, including named geometry, extraction, and the optional
+`accel`/`lazy`/`all` extras. Publishing is tag-driven; check the `v0.0.3` workflow
+and PyPI before declaring it complete. ConfUSIus integration remains in draft PR
+#569; replace its temporary Git pin with the published version after release.
 
 ## Status
 
@@ -27,11 +29,12 @@ The initial package (`0.0.1`) is published. ConfUSIus integration is in draft PR
 - `src/voxeldata/masks.py` owns generic mask/label validation and spatial alignment;
   no ConfUSIus import or acquisition-metadata defaults. Shared spatial maps require
   physically identical geometry across any unshared dependency axes.
-- Extraction works out of the box through Xarray's grouped reductions. Flox
-  acceleration and Dask lazy arrays are optional; both are dev dependencies for CI.
+- Extraction works out of the box through Xarray's grouped reductions. Extras
+  `accel` (flox) and `lazy` (Dask array) are independent and optional; `all`
+  combines them without development tools. Both backends are dev dependencies for CI.
   The numerical label tests exercise native and flox-accelerated reductions.
-  Verified: 331 tests on Python 3.11–3.14 (Linux), 93% overall coverage and 100%
-  coverage for extraction/mask modules. Base-only installation exercises all
+  Before the N-D timestamp extension: 331 tests on Python 3.11–3.14 (Linux),
+  93% overall coverage and 100% coverage for extraction/mask modules. Base-only installation exercises all
   reductions and overlapping maps with neither flox nor Dask installed.
 - Extraction keeps signal data lazy; label/mask metadata are eager. Flox median
   needs groups contained within chunks; rechunk explicitly. `unmask` is eager and
@@ -46,9 +49,28 @@ The initial package (`0.0.1`) is published. ConfUSIus integration is in draft PR
   boundary-test Ruff, ty, docstrings, spelling, strict docs, and build pass.
 - PR #569 remains draft. No checks were reported for its new head immediately
   after push; older successful remote runs do not verify the current commits.
-  No new release was published. ConfUSIus's four untracked benchmark files remain
-  untouched.
+  Release `0.0.3` is authorized; do not publish subsequent versions without approval.
+  ConfUSIus's four untracked benchmark files remain untouched.
 - New API docs: `docs/api/extract.md`, `docs/api/masks.md`. See `ROADMAP.md`.
+
+### Release 0.0.3 follow-up
+
+- `create_voxeldata(time=...)` now accepts a named DataArray with `time` plus any
+  number of nonspatial timestamp dependencies. These are independent of geometry.
+  Each series is numeric, finite, and strictly increasing along `time`; all axes
+  must match data sizes. Legacy unnamed 2D grid/pose timing remains supported.
+- `slice_time` and other auxiliary coordinates remain consumer-defined. VoxelData
+  does not add or interpret acquisition reference/duration metadata. ConfUSIus
+  retains its constructor defaults and explicit acquisition/slice validation.
+- Current standalone suite: 344 cases, including arbitrary-axis order, four-axis
+  timestamps, geometry independence, malformed nonfirst series, and lazy signals.
+- ConfUSIus follow-up removes the three extraction wrapper modules and directly
+  re-exports `voxeldata.extract`. `.fusi.extract` imports public `confusius.extract`
+  exports. Generic extraction no longer defaults or validates acquisition metadata.
+  Explicit ConfUSIus mask/label validators remain acquisition-aware.
+- Focused downstream proof against the candidate wheel: 238 tests passed. Docs
+  need `voxeldata` preloaded in mkdocstrings to resolve imported public exports.
+  Publish 0.0.3 before replacing the draft's Git dependency with the registry release.
 
 ### Done
 
@@ -96,21 +118,20 @@ The initial package (`0.0.1`) is published. ConfUSIus integration is in draft PR
 
 ### Remaining
 
-1. ConfUSIus draft PR #569 integrates published VoxelData 0.0.1. Adoption of the
-   current generalized geometry feature will need updated downstream assertions
-   and explicit dependency metadata in serializers. Do not duplicate geometry
-   logic or move fUSI timing semantics into VoxelData.
+1. Finish publishing authorized VoxelData 0.0.3, replace ConfUSIus draft PR #569's
+   Git pin with that registry release, verify the installed dependency and full
+   downstream suite, and push its direct-extraction-export follow-up. Do not merge
+   either feature branch or publish further versions without authorization.
 2. **Update voxreg** to consume `voxeldata` named affines (`data.vd.to(other, via)`)
    and drop `attrs["affines"]`.
 3. `tests/test_geometry_dims.py` covers named geometry dependencies, vectorized
    geometry indexing, lazy signal data, native voxel labels, composition, bounds,
    reindexing, and pickle round-trips. Run `uv run --with 'dask[array]' pytest -q`
    to exercise the optional lazy-backend test without a new project dependency.
-   The current standalone suite has 197 passing cases on Python 3.11–3.14 (Linux).
-   ConfUSIus adoption updates constructor forwarding, dependency serialization,
-   mask alignment, and old grid-only test expectations; verify its full suite.
-4. The initial release and Trusted Publisher are configured. Current geometry
-   changes are not published; release a new version only when explicitly requested.
+   The suite has 344 cases after the N-D timestamp extension. Previous full
+   ConfUSIus proof predates direct extraction re-exports; reverify that follow-up.
+4. Trusted Publisher is configured. The user authorized release 0.0.3; tag matching
+   the project version only after local checks pass and verify the publish workflow.
 5. Optionally add a `CHANGELOG.md`.
 
 ## Design decisions (do not silently change)

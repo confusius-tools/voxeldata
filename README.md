@@ -70,7 +70,12 @@ data = vd.create_voxeldata(
 example, `geometry_dims=("time", "view")` requires `(ntime, nview, 4, 4)` matrices;
 other axes, such as channels, share geometry. A single `(4, 4)` affine has no
 geometry dependencies, even when nonspatial dimensions are present. Timing
-coordinates are independent of these geometry dependencies.
+coordinates are independent of these geometry dependencies. A named `time`
+DataArray may use `(time, view, channel, ...)`, with any number of nonspatial
+dependencies. Each timestamp series must increase along `time`. Select all
+additional timestamp axes before using a shared-time index or analysis.
+Auxiliary coordinates such as `slice_time(time, k)` may be added with
+`assign_coords`; their acquisition-specific meaning belongs to the consumer.
 
 Existing `(ngrid, 4, 4)` stacks still infer `geometry_dims=("grid",)` (or `"pose"`
 for legacy probe poses when no `grid` is present). Other stacks require explicit
@@ -121,7 +126,14 @@ indexing machinery and are exported for advanced use.
 
 `voxeldata.extract` provides generic mask extraction, region aggregation, and
 reconstruction. All three functions work out of the box using Xarray. Install
-flox for optional group-reduction acceleration, or Dask for lazy arrays.
+`voxeldata[accel]` for optional flox group-reduction acceleration,
+`voxeldata[lazy]` for Dask arrays, or `voxeldata[all]` for both:
+
+```bash
+uv add 'voxeldata[all]'
+```
+
+`all` includes optional runtime features, not development tools.
 
 ```python
 signals = vd.extract_with_mask(data, mask)  # (..., space), selected native labels.

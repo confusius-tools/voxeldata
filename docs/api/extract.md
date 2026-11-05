@@ -17,9 +17,24 @@ built-in grouped reductions:
 uv add voxeldata
 ```
 
-Install `flox` separately for automatic group-reduction acceleration, or
-`dask[array]` for lazy/chunked signal data. Neither is needed for NumPy-backed
-extraction, including overlapping label maps.
+Choose optional backends independently:
+
+| Installation | Additional backend |
+|---|---|
+| `voxeldata` | None; all extraction functions work using Xarray/NumPy |
+| `voxeldata[accel]` | flox for automatic group-reduction acceleration |
+| `voxeldata[lazy]` | Dask for lazy/chunked signal data |
+| `voxeldata[accel,lazy]` or `voxeldata[all]` | Both |
+
+```bash
+uv add 'voxeldata[all]'
+```
+
+The `all` extra combines optional runtime features; it does not install development
+tools.
+
+Neither backend is needed for NumPy-backed extraction, including overlapping label
+maps. The `lazy` extra does not make reconstruction lazy: `unmask` remains eager.
 
 ## Example
 

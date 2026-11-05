@@ -62,7 +62,8 @@ module now provides:
 - Preserve native voxel labels, nonspatial coordinates and metadata, region
   identifiers, reconstruction geometry, and existing lazy-array behavior.
 - Extraction is included out of the box through Xarray's grouped reductions.
-  Flox acceleration and Dask laziness are optional; both are dev dependencies for CI.
+  Extras `accel` (flox) and `lazy` (Dask array) are independent and optional;
+  `all` combines both runtime extras. Both backends are dev dependencies for CI.
   Native and accelerated reductions share the same public API and numerical tests.
 - Port applicable ConfUSIus tests and add multi-geometry and Dask regressions with
   independent extraction/reconstruction oracles.

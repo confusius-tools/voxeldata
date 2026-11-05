@@ -296,9 +296,10 @@ def create_voxeldata(
     extra_coords : mapping[str, numpy.typing.ArrayLike or xarray.DataArray], optional
         Coordinates for non-core dimensions only.
     time : numpy.typing.ArrayLike or xarray.DataArray, optional
-        Coordinates for the `time` dimension. A 2D NumPy array gives timestamps
-        per legacy `grid` or `pose`. A 2D DataArray explicitly names its timestamp
-        dependencies, independently of `geometry_dims`.
+        Coordinates for the `time` dimension. A multidimensional DataArray names
+        `time` and any additional nonspatial timestamp dependencies, independently
+        of `geometry_dims`. Values must increase along `time` for each series.
+        A 2D NumPy array retains legacy per-`grid` or per-`pose` interpretation.
     grid : numpy.typing.ArrayLike or xarray.DataArray, optional
         Integer coordinates for the `grid` dimension.
     pose : numpy.typing.ArrayLike or xarray.DataArray, optional
@@ -345,11 +346,9 @@ def create_voxeldata(
     Raises
     ------
     ValueError
-        If `dims` uses world `z`/`y`/`x` names instead of native voxel names, if a
-        grid-stacked `voxel_to_world` is given without a matching `grid` dimension,
-        if `dims` has a `grid` dimension and `voxel_to_world` is not a matching
-        per-grid stack, or if dimensions, coordinates, geometry, or validation
-        otherwise fail.
+        If dimensions, coordinate dependencies or values, geometry, or model
+        validation are invalid. World `z`/`y`/`x` names are not native dimensions;
+        affine stacks must match their named geometry dependencies.
     """
     dims = tuple(str(dim) for dim in dims)
     shape = np.shape(data)
@@ -387,16 +386,16 @@ def create_voxeldata(
             raise ValueError(
                 "Multidimensional time must use time and named nonspatial data dimensions."
             )
-        if named_time.ndim != 2:
-            raise ValueError(
-                "Multidimensional time currently supports two named dimensions."
-            )
-        timing_dim = next(d for d in named_time.dims if d != TIME_DIM)
-        time = named_time.transpose(TIME_DIM, timing_dim)
+        named_time = named_time.transpose(TIME_DIM, ...)
+        for dim in named_time.dims:
+            if named_time.sizes[dim] != shape[dims.index(str(dim))]:
+                raise ValueError(
+                    f"time dimension {dim!r} has size {named_time.sizes[dim]}, "
+                    f"but data has size {shape[dims.index(str(dim))]}."
+                )
 
-    per_grid_time: npt.NDArray[np.float64] | None = None
-    per_grid_time_attrs: dict[str, Any] = {}
-    if time is not None:
+    dependent_time: xr.DataArray | None = named_time
+    if time is not None and named_time is None:
         time_array = time.values if isinstance(time, xr.DataArray) else np.asarray(time)
         if time_array.ndim == 2:
             if timing_dim not in dims:
@@ -410,13 +409,12 @@ def create_voxeldata(
                     f"time has {time_array.shape[1]} grid columns, but the 'grid' "
                     f"dimension size is {grid_size}."
                 )
-            per_grid_time = np.asarray(time_array, dtype=np.float64)
-            per_grid_time_attrs = (
-                dict(time.attrs) if isinstance(time, xr.DataArray) else {}
+            dependent_time = xr.DataArray(
+                np.asarray(time_array, dtype=np.float64),
+                dims=(TIME_DIM, timing_dim),
+                attrs=dict(time.attrs) if isinstance(time, xr.DataArray) else {},
             )
-            per_grid_time_attrs.setdefault("units", _TIME_UNITS)
-            time = time_array[:, 0]
-    elif TIME_DIM in dims:
+    elif time is None and TIME_DIM in dims:
         t0_array = np.asarray(t0)
         if t0_array.ndim > 0:
             if timing_dim not in dims:
@@ -439,11 +437,15 @@ def create_voxeldata(
             t0_values = np.asarray(t0_array, dtype=np.float64)
             if not np.all(np.isfinite(t0_values)):
                 raise ValueError("t0 must contain finite values.")
-            per_grid_time = (
+            dependent_time = xr.DataArray(
                 t0_values[None, :]
-                + np.arange(time_size, dtype=np.float64)[:, None] * dt_value
+                + np.arange(time_size, dtype=np.float64)[:, None] * dt_value,
+                dims=(TIME_DIM, timing_dim),
             )
-            time = per_grid_time[:, 0]
+
+    if dependent_time is not None:
+        dependent_time = dependent_time.copy(deep=False)
+        dependent_time.attrs.setdefault("units", _TIME_UNITS)
 
     forbidden_extra = set(CORE_DIMS) | set(WORLD_DIMS)
     overlap = sorted(forbidden_extra & set(extra_coords))
@@ -485,13 +487,20 @@ def create_voxeldata(
     for dim, size in zip(data_dims, data_array.shape, strict=True):
         if dim in VOXEL_DIMS:
             continue
-        data_coords[dim] = _coordinate_dataarray(
-            dim,
-            int(size),
-            coords=coord_inputs,
-            spacings=spacings,
-            origins=origins,
-        )
+        if dim == TIME_DIM and dependent_time is not None:
+            data_coords[dim] = xr.DataArray(
+                dependent_time.data,
+                dims=dependent_time.dims,
+                attrs=dict(dependent_time.attrs),
+            )
+        else:
+            data_coords[dim] = _coordinate_dataarray(
+                dim,
+                int(size),
+                coords=coord_inputs,
+                spacings=spacings,
+                origins=origins,
+            )
 
     voxel_to_world_array = (
         None if voxel_to_world is None else np.asarray(voxel_to_world, dtype=np.float64)
@@ -544,6 +553,9 @@ def create_voxeldata(
 
     nonspatial_dims = [dim for dim in result.dims if dim not in VOXEL_DIMS]
     result = result.transpose(*nonspatial_dims, *VOXEL_DIMS)
+    if dependent_time is not None:
+        # Keep timestamp axes independent of the parent dimension order.
+        result = result.assign_coords({TIME_DIM: data_coords[TIME_DIM]})
 
     explicit_voxel_dims = {
         dim for dim, coord in voxel_coord_inputs.items() if coord is not None
@@ -554,15 +566,11 @@ def create_voxeldata(
         if dim in result.dims
         and result.sizes[dim] > 1
         and dim not in explicit_voxel_dims
-        and not (dim == TIME_DIM and time is not None)
+        and not (dim == TIME_DIM and (time is not None or dependent_time is not None))
     )
     validate_voxeldata(
         result,
         require_regular_spacing=True,
         regular_spacing_dims=regular_spacing_dims,
     )
-    if per_grid_time is not None:
-        result = result.drop_vars(TIME_DIM).assign_coords(
-            {TIME_DIM: ((TIME_DIM, timing_dim), per_grid_time, per_grid_time_attrs)}
-        )
     return result

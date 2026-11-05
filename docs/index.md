@@ -141,10 +141,12 @@ assert moving.isel(time=0, view=1).vd.geometry_dims == ()
   Scalar origin/direction require a selected geometry. Spacing/scalings require
   equal scales across geometries; otherwise select one first. `.vd.spacing` still
   includes ordinary nonspatial coordinate spacing, where defined.
-- **Timing:** timestamps may vary per legacy grid/probe pose or, with a named 2D
-  time DataArray, per another nonspatial dimension. Their dependency need not match
-  `geometry_dims`. Timing values and attrs survive slicing and canonicalization.
-  VoxelData does not interpret `slice_time` or supply modality-specific timing defaults.
+- **Timing:** a named time DataArray may depend on `time` and any number of
+  additional nonspatial dimensions, independently of `geometry_dims`. Each series
+  must be finite and increase along `time`. Select timestamp dependencies before
+  using a shared-time index or analysis. Timing values and attrs survive slicing
+  and canonicalization. Auxiliary coordinates such as `slice_time(time, k)` remain
+  consumer-defined; VoxelData does not interpret them or supply acquisition defaults.
 - **Persistence:** Python pickle round-trips preserve geometry dependencies and
   named frames. VoxelData does not provide a Zarr/NetCDF serializer: external
   serializers must save ordered `geometry_dims`, affine stacks, units, native voxel

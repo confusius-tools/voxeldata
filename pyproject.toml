@@ -1,6 +1,6 @@
 [project]
 name = "voxeldata"
-version = "0.0.1"
+version = "0.0.3"
 description = "Spatially referenced voxel arrays built on xarray."
 readme = "README.md"
 license = "BSD-3-Clause"
@@ -25,6 +25,11 @@ dependencies = [
     "pandas>=2.2.0",
     "xarray>=2025.1.0",
 ]
+
+[project.optional-dependencies]
+accel = ["flox>=0.11.1"]
+lazy = ["dask[array]>=2025.9.0"]
+all = ["voxeldata[accel,lazy]"]
 
 [build-system]
 requires = ["uv-build>=0.9.5,<0.14.0"]

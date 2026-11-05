@@ -277,6 +277,27 @@ def make_sample_voxeldata_mask(sample_voxeldata_3d):
 
 
 @pytest.fixture
+def multiaxis_timestamps() -> xr.DataArray:
+    """Return independently offset timestamps for two nonspatial dependencies.
+
+    Returns
+    -------
+    xarray.DataArray
+        Three time points for each view/channel pair, with clock metadata.
+    """
+    values = (
+        np.arange(3.0)[:, None, None]
+        + np.array([0.0, 0.1])[None, :, None]
+        + np.array([0.0, 0.3])[None, None, :]
+    )
+    return xr.DataArray(
+        values,
+        dims=("time", "view", "channel"),
+        attrs={"units": "s", "clock": "device"},
+    )
+
+
+@pytest.fixture
 def multigeometry_data(
     oblique_affine: np.ndarray, named_affines: dict[str, np.ndarray]
 ) -> xr.DataArray:

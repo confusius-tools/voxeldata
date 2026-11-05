@@ -163,7 +163,7 @@ def _validate_dimension_coordinate(
         and TIME_DIM in coord.dims
         and all(d in da.dims and d not in VOXEL_DIMS for d in coord.dims)
     ):
-        # A grid-dependent array may carry each grid's own timestamps directly.
+        # Timestamp dependencies are independent of affine dependencies.
         if not np.issubdtype(coord.dtype, np.number):
             raise ValueError(f"Coordinate {dim!r} must be numeric.")
         values = np.asarray(coord.transpose(TIME_DIM, ...).values)
@@ -174,7 +174,7 @@ def _validate_dimension_coordinate(
         if not np.all(np.diff(values, axis=0) > 0):
             raise ValueError(
                 f"Coordinate {dim!r} must be strictly monotonic-increasing for "
-                "every grid."
+                "every timestamp series."
             )
         return
 
