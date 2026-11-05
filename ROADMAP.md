@@ -39,13 +39,13 @@ prerequisite.
   the full ConfUSIus suite, including napari, integration, and visual-regression
   tests, and report any unavailable checks.
 
-## 2. Consider moving generic extraction from ConfUSIus
+## 2. Move generic extraction from ConfUSIus
 
-**Deferred until named-geometry integration and downstream compatibility are verified.**
+**In progress: standalone implementation and test port. Downstream delegation remains.**
 
 The functions in `confusius.extract` operate on spatially referenced voxel arrays,
-not specifically on functional ultrasound data. Evaluate moving the whole module
-into VoxelData:
+not specifically on functional ultrasound data. The standalone `voxeldata.extract`
+module now provides:
 
 - `extract_with_mask`: select voxel samples while retaining all nonspatial axes.
 - `extract_with_labels`: aggregate voxel samples by flat label maps or overlapping
@@ -61,14 +61,16 @@ into VoxelData:
   broadcast a mask across physically different grids without an explicit rule.
 - Preserve native voxel labels, nonspatial coordinates and metadata, region
   identifiers, reconstruction geometry, and existing lazy-array behavior.
-- Review dependency impact before choosing packaging. Label reductions currently
-  use `flox`; decide whether extraction warrants a required dependency or an extra.
+- Extraction is included out of the box through Xarray's grouped reductions.
+  Flox acceleration and Dask laziness are optional; both are dev dependencies for CI.
+  Native and accelerated reductions share the same public API and numerical tests.
 - Port applicable ConfUSIus tests and add multi-geometry and Dask regressions with
   independent extraction/reconstruction oracles.
 - Update ConfUSIus consumers and its `.fusi` extraction layer to delegate to
   VoxelData, removing duplicate implementation rather than creating a second one.
-- Choose the public module/accessor API during that work; this roadmap does not
-  commit to additional accessor methods or compatibility aliases.
+- Public functions are in `voxeldata.extract`, with top-level re-exports. Generic
+  validators live in `voxeldata.masks`. No extraction accessor methods or
+  compatibility aliases are added.
 
 ## Further candidates
 

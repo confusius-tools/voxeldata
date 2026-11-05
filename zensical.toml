@@ -13,6 +13,8 @@ nav = [
         { "Creation" = "api/create.md" },
         { "Validation" = "api/validation.md" },
         { "Affine operations" = "api/affine.md" },
+        { "Extraction" = "api/extract.md" },
+        { "Masks and labels" = "api/masks.md" },
         { "Accessors" = "api/accessors.md" },
         { "Dimensions" = "api/dims.md" },
     ]},

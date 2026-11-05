@@ -20,6 +20,27 @@ The initial package (`0.0.1`) is published. ConfUSIus integration is in draft PR
 
 ## Status
 
+### Extraction implementation
+
+- `src/voxeldata/extract/` now provides `extract_with_mask`, `extract_with_labels`,
+  and `unmask`, also exported at package root. No new accessor methods.
+- `src/voxeldata/masks.py` owns generic mask/label validation and spatial alignment;
+  no ConfUSIus import or acquisition-metadata defaults. Shared spatial maps require
+  physically identical geometry across any unshared dependency axes.
+- Extraction works out of the box through Xarray's grouped reductions. Flox
+  acceleration and Dask lazy arrays are optional; both are dev dependencies for CI.
+  The numerical label tests exercise native and flox-accelerated reductions.
+  Verified: 331 tests on Python 3.11–3.14 (Linux), 93% overall coverage and 100%
+  coverage for extraction/mask modules. Base-only installation exercises all
+  reductions and overlapping maps with neither flox nor Dask installed.
+- Extraction keeps signal data lazy; label/mask metadata are eager. Flox median
+  needs groups contained within chunks; rechunk explicitly. `unmask` is eager and
+  positional, preserves the mask's named frames, and supports spatial-only masks.
+- ConfUSIus delegation is being wired on `feat/voxeldata-integration` for draft
+  PR #569. Thin adapters retain acquisition defaults/validation; generic extraction
+  and alignment belong here. Update its immutable Git pin before verification.
+- New API docs: `docs/api/extract.md`, `docs/api/masks.md`. See `ROADMAP.md`.
+
 ### Done
 
 - Standalone `uv` package `voxeldata` (`uv_build`, Python 3.11–3.14).
@@ -196,7 +217,7 @@ uv run ruff check --fix src tests
 uv run ruff format src tests
 uv run ty check
 uv run pytest -q
-uv run numpydoc lint src/voxeldata/*.py
+uv run numpydoc lint src/voxeldata/*.py src/voxeldata/extract/*.py
 uv run codespell src tests docs README.md zensical.toml justfile pyproject.toml
 uv run zensical build --strict
 uv build

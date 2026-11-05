@@ -17,6 +17,7 @@ from voxeldata.affine import (
     reindex_voxels_like,
 )
 from voxeldata.create import create_voxeldata
+from voxeldata.extract import extract_with_labels, extract_with_mask, unmask
 from voxeldata.geometry import (
     VoxelToWorldIndex,
     VoxelToWorldTransform,
@@ -35,6 +36,14 @@ from voxeldata.geometry import (
     has_voxel_to_world_index,
     require_scalar_grid_affine,
     restore_voxel_to_world_index,
+)
+from voxeldata.masks import (
+    check_mask_dtype,
+    check_spatial_alignment,
+    ensure_labels,
+    ensure_mask,
+    validate_labels,
+    validate_mask,
 )
 from voxeldata.validation import (
     canonicalize_voxeldata,
@@ -56,9 +65,15 @@ __all__ = [
     "apply_affine",
     "attach_voxel_to_world_index",
     "canonicalize_voxeldata",
+    "check_mask_dtype",
+    "check_spatial_alignment",
     "convert_length_units",
     "create_voxeldata",
+    "ensure_labels",
+    "ensure_mask",
     "ensure_voxeldata",
+    "extract_with_labels",
+    "extract_with_mask",
     "get_affine_axis_scalings",
     "get_affine_direction_matrix",
     "get_bounding_box",
@@ -78,5 +93,8 @@ __all__ = [
     "require_positive_finite",
     "require_scalar_grid_affine",
     "restore_voxel_to_world_index",
+    "unmask",
+    "validate_labels",
+    "validate_mask",
     "validate_voxeldata",
 ]

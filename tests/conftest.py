@@ -4,11 +4,31 @@ Adapted from ConfUSIus's unit fixtures. Distinct sample values make incorrect
 selection or reordering visible; each test gets fresh mutable arrays.
 """
 
+from collections.abc import Iterator
+
 import numpy as np
 import pytest
 import xarray as xr
 
 import voxeldata as vd
+
+
+@pytest.fixture(params=[False, True])
+def label_backend(request: pytest.FixtureRequest) -> Iterator[bool]:
+    """Exercise native and accelerated Xarray group reductions.
+
+    Parameters
+    ----------
+    request : pytest.FixtureRequest
+        Whether to enable flox acceleration for this test.
+
+    Yields
+    ------
+    bool
+        Whether flox is enabled.
+    """
+    with xr.set_options(use_flox=request.param):
+        yield request.param
 
 
 @pytest.fixture
@@ -219,6 +239,41 @@ def sample_voxeldata_irregular(plain_volume: xr.DataArray) -> xr.DataArray:
     """
     data = plain_volume.assign_coords(k=[0, 2], j=[0, 1, 3], i=[0, 2, 3, 7])
     return vd.attach_voxel_to_world_index(data, np.diag([10.0, 2.0, 3.0, 1.0]))
+
+
+@pytest.fixture
+def make_sample_voxeldata_mask(sample_voxeldata_3d):
+    """Return a factory for empty spatial masks on the shared sample grid.
+
+    Parameters
+    ----------
+    sample_voxeldata_3d : xarray.DataArray
+        Reference native voxel labels, geometry, and units.
+
+    Returns
+    -------
+    callable
+        Factory accepting a dtype and returning a fresh zero-filled mask.
+    """
+
+    def make_mask(dtype=bool):
+        """Create an empty mask without sharing mutable sample data.
+
+        Parameters
+        ----------
+        dtype : type, default: bool
+            Mask value dtype.
+
+        Returns
+        -------
+        xarray.DataArray
+            Independent mask on the reference voxel grid.
+        """
+        return sample_voxeldata_3d.copy(
+            data=np.zeros(sample_voxeldata_3d.shape, dtype=dtype)
+        )
+
+    return make_mask
 
 
 @pytest.fixture

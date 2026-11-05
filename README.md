@@ -111,9 +111,27 @@ restores scalar-selected spatial dimensions, but does not restore a selected gri
 | Validation | `validate_voxeldata`, `ensure_voxeldata`, `canonicalize_voxeldata` |
 | Affine operations | `apply_affine`, `reindex_voxels`, `reindex_voxels_like`, `get_bounding_box`, `get_relative_affine` |
 | Named affines | `data.vd.get_affine`, `set_affine`, `remove_affine`, `apply`, `to` |
+| Extraction | `extract_with_mask`, `extract_with_labels`, `unmask` |
+| Masks and labels | `ensure_mask`, `validate_mask`, `ensure_labels`, `validate_labels`, `check_spatial_alignment` |
 
 The `VoxelToWorldIndex` and `VoxelToWorldTransform` classes implement the xarray
 indexing machinery and are exported for advanced use.
+
+## Extraction
+
+`voxeldata.extract` provides generic mask extraction, region aggregation, and
+reconstruction. All three functions work out of the box using Xarray. Install
+flox for optional group-reduction acceleration, or Dask for lazy arrays.
+
+```python
+signals = vd.extract_with_mask(data, mask)  # (..., space), selected native labels.
+regions = vd.extract_with_labels(data, labels, reduction="mean")  # (..., region).
+restored = vd.unmask(signals, mask)         # Rebuild the mask's full spatial grid.
+```
+
+Masks/labels must share the physical voxel grid. Select varying geometry before
+using a shared spatial mask. Extraction preserves lazy signal data; `unmask` is
+eager. See the [extraction guide](docs/api/extract.md) for formats and chunking limits.
 
 ## Relationship to ConfUSIus
 
