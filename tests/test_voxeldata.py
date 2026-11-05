@@ -282,10 +282,11 @@ def test_nonspatial_order_and_grid_geometry(leading_dims: tuple[str, ...]) -> No
 @pytest.mark.parametrize("ngrid", [1, 2])
 def test_grid_requires_matching_affine_stack(ngrid: int) -> None:
     values = np.zeros((ngrid, 2, 2, 2))
-    with pytest.raises(ValueError, match="every grid must carry its own affine"):
-        vd.create_voxeldata(
-            values, dims=("grid", "k", "j", "i"), voxel_to_world=np.eye(4)
-        )
+    shared = vd.create_voxeldata(
+        values, dims=("grid", "k", "j", "i"), voxel_to_world=np.eye(4)
+    )
+    assert shared.vd.geometry_dims == ()
+    assert shared.z.dims == ("k", "j", "i")
     with pytest.raises(ValueError, match="stack length"):
         vd.create_voxeldata(
             values,

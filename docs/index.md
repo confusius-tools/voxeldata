@@ -48,11 +48,18 @@ A VoxelData array is an `xarray.DataArray` with:
    lazily from a voxel-to-world affine;
 3. optional `time` coordinates carrying a `units` attribute.
 
-The `grid` dimension selects a spatial sampling grid. Its presence requires one
-affine per grid, even when there is only one grid. Each affine applies across time
-and all other nonspatial dimensions within that grid; different grids may have
-identical affines. A single shared affine is only valid with no `grid` dimension.
-`time` represents temporal samples and may carry separate timestamps per grid.
+`geometry_dims` explicitly names the nonspatial dimensions that select affine
+matrices. The required affine shape is
+`(*[data.sizes[d] for d in geometry_dims], 4, 4)`. Unrelated nonspatial dimensions
+share geometry. A single `(4, 4)` affine has `geometry_dims=()`, regardless of the
+array's nonspatial dimensions.
+
+For compatibility, omitted `geometry_dims` on a 3D stack infers `("grid",)`, or
+`("pose",)` when only the legacy probe-pose dimension is present. All other stacks
+require explicit names; matching dimension lengths are never used to infer axes.
+Identical affines are allowed. Inferred legacy stacks retain their equal-scale
+validation; explicit geometry dependencies may have varying spatial scalings.
+`time` represents temporal samples, independently of geometry dependencies.
 
 Creation preserves the input nonspatial dimension order, so both
 `(time, grid, k, j, i)` and `(grid, time, k, j, i)` are valid. Canonicalization and
@@ -60,8 +67,11 @@ Creation preserves the input nonspatial dimension order, so both
 the relative order of extra dimensions and omitting absent `grid`/`time` dimensions.
 Scalar-selected spatial dimensions are restored, but a scalar-selected grid is not.
 
-World coordinates are never materialized and stored as data. They are computed from
-the affine, so slicing, cropping, and indexing preserve exact physical geometry.
+World coordinates remain lazy: representing, indexing, transposing, or rebuilding
+the model does not generate dense world arrays. Explicitly requesting coordinate
+values, for example `data.z.values`, evaluates the requested geometry/voxel product.
+Unrelated dimensions are not included. Native voxel labels are inputs to the affine:
+selecting or cropping `[10, 12, 14]` does not silently replace them with `[0, 1, 2]`.
 
 ## :lucide-terminal: Quick start
 
@@ -84,8 +94,77 @@ data.vd.direction    # (3, 3) world direction matrix
 ```
 
 Pass `voxel_to_world` instead of `spacing`/`origin`/`direction` for an arbitrary
-(including oblique) affine. Time and grid coordinates are supported with `time`,
-`grid`, `dt`, and `t0`.
+(including oblique) affine. Time and legacy grid/probe-pose coordinates are supported
+with `time`, `grid`, `pose`, `dt`, and `t0`.
+
+## Named geometry dependencies
+
+For moving geometry indexed by time and view, with two channels sharing it:
+
+```python
+affines = np.broadcast_to(np.eye(4), (3, 2, 4, 4)).copy()
+affines[1:, :, 0, 3] = 10.0
+moving = vd.create_voxeldata(
+    np.zeros((2, 3, 2, 4, 5, 6)),
+    dims=("channel", "time", "view", "k", "j", "i"),
+    time=[0.0, 1.0, 2.0],
+    extra_coords={"channel": ["a", "b"], "view": [11, 41]},
+    voxel_to_world=affines,
+    geometry_dims=("time", "view"),
+)
+
+assert moving.vd.geometry_dims == ("time", "view")
+assert moving.z.dims == ("time", "view", "k", "j", "i")
+assert moving.sel(view=41).vd.geometry_dims == ("time",)
+assert moving.isel(time=0, view=1).vd.geometry_dims == ()
+```
+
+- **Indexing:** scalar geometry selection removes its affine axis. Slices, lists,
+  Boolean masks, and Xarray's named vectorized geometry indexers select matching
+  matrices and named frames. Native voxel selections preserve their original labels.
+  Vectorized voxel indexing that is no longer a Cartesian grid drops the geometry
+  index, as before; it must not be interpreted as another regular VoxelData grid.
+- **Array order:** `.transpose()` and canonicalization do not reorder affine batch
+  axes. `.rename(view="angle")` updates the dependency name. Spatial names remain
+  fixed: `(k, j, i)` map to `(z, y, x)`.
+- **World lookup:** select a scalar on *every* geometry dimension first, then make a
+  separate world-coordinate `.sel()` call. A combined geometry/world lookup cannot
+  be resolved by Xarray's independent indexes and raises an error.
+- **Frames and composition:** named frames live on the index, not in array attrs.
+  Each frame is shared `(4, 4)` or has the complete ordered geometry batch shape.
+  `.vd.apply(action, geometry_dims=("view",))` aligns action axes by name and may
+  introduce new dependencies. `.vd.to(other, "lab")` aligns frame dependencies by
+  name and rejects differing labels/order on shared axes. Returned NumPy batches
+  use source dependency order followed by any additional target dependencies.
+- **Geometry helpers:** bounding boxes retain all geometry axes and reindexing
+  operates directly on affine stacks, without generating dense world coordinates.
+  Scalar origin/direction require a selected geometry. Spacing/scalings require
+  equal scales across geometries; otherwise select one first. `.vd.spacing` still
+  includes ordinary nonspatial coordinate spacing, where defined.
+- **Timing:** timestamps may vary per legacy grid/probe pose or, with a named 2D
+  time DataArray, per another nonspatial dimension. Their dependency need not match
+  `geometry_dims`. Timing values and attrs survive slicing and canonicalization.
+  VoxelData does not interpret `slice_time` or supply modality-specific timing defaults.
+- **Persistence:** Python pickle round-trips preserve geometry dependencies and
+  named frames. VoxelData does not provide a Zarr/NetCDF serializer: external
+  serializers must save ordered `geometry_dims`, affine stacks, units, native voxel
+  labels, and named frames, and pass `geometry_dims` explicitly when restoring them.
+
+!!! warning "Unsupported geometry-axis reindexing"
+    Native Xarray `.reindex()` is unsupported on dimensions listed in
+    `data.vd.geometry_dims`. Use `.isel()` or `.sel()` to select/reorder these axes, not `.reindex()` or
+    alignment that changes their labels. Xarray may bypass the custom world index
+    during these operations, leaving stale geometry. VoxelData access/validation
+    rejects mismatching indexed geometry labels; Xarray's raw world coordinates
+    cannot perform this parent-array check. Replacing geometry-axis labels directly
+    has the same restriction. Concatenation is supported along existing geometry
+    axes with matching other coordinates; concatenating native voxel axes is not.
+    The explicit `.vd.reindex_voxels()` and `.vd.reindex_voxels_like()` operations
+    rebuild the geometry and are not affected by this restriction.
+
+Dask-backed signal data remain lazy through construction, validation, selection,
+canonicalization, bounds, and reindexing. Affine stacks and dimension labels are
+small, eager metadata; arbitrary `slice_time` coordinates remain ordinary metadata.
 
 ## :lucide-layers: Features
 

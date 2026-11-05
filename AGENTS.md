@@ -14,9 +14,9 @@ package at:
 Source project: `/home/sdiebolt/Documents/Work/cortexlab/confusius-tools/confusius`.
 Downstream consumer: `/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg`.
 
-The initial package includes the extraction, the flat `.vd` accessor, grid-based
-geometry, and flexible nonspatial dimension ordering. Downstream integration is
-still pending.
+The initial package (`0.0.1`) is published. ConfUSIus integration is in draft PR
+#569. The current feature generalizes geometry to arbitrary ordered
+`geometry_dims`, while preserving legacy grid/probe-pose stack inference.
 
 ## Status
 
@@ -66,20 +66,21 @@ still pending.
 
 ### Remaining
 
-1. **Integrate into ConfUSIus** (not started):
-   - Replace `confusius._utils.geometry` and `confusius.xarray.affine` internals
-     with re-exports from `voxeldata`, or make `confusius` depend on `voxeldata`
-     and delete duplicated code.
-   - Remove all `attrs["affines"]` usage in ConfUSIus; move consumers to
-     `data.vd.affines` / `get_affine` / `set_affine` / `apply` / `to`.
-   - Keep ConfUSIus's `.fusi` accessor as the fUSI-specific layer, delegating
-     geometry to `voxeldata`; do not duplicate geometry logic.
+1. ConfUSIus draft PR #569 integrates published VoxelData 0.0.1. Adoption of the
+   current generalized geometry feature will need updated downstream assertions
+   and explicit dependency metadata in serializers. Do not duplicate geometry
+   logic or move fUSI timing semantics into VoxelData.
 2. **Update voxreg** to consume `voxeldata` named affines (`data.vd.to(other, via)`)
    and drop `attrs["affines"]`.
-3. Optional further test ports: advanced vectorized indexers and lazy-array
-   backend behavior. The standalone suite does not require Dask or fUSI metadata.
-4. Configure the GitHub `pypi` environment and PyPI Trusted Publisher before the
-   first release. The workflows are present; no release has been triggered.
+3. `tests/test_geometry_dims.py` covers named geometry dependencies, vectorized
+   geometry indexing, lazy signal data, native voxel labels, composition, bounds,
+   reindexing, and pickle round-trips. Run `uv run --with 'dask[array]' pytest -q`
+   to exercise the optional lazy-backend test without a new project dependency.
+   The current standalone suite has 197 passing cases on Python 3.11–3.14 (Linux).
+   ConfUSIus adoption updates constructor forwarding, dependency serialization,
+   mask alignment, and old grid-only test expectations; verify its full suite.
+4. The initial release and Trusted Publisher are configured. Current geometry
+   changes are not published; release a new version only when explicitly requested.
 5. Optionally add a `CHANGELOG.md`.
 
 ## Design decisions (do not silently change)
@@ -91,11 +92,18 @@ still pending.
 - Canonicalization and `ensure` use `(...extra_dims, grid, time, k, j, i)`, preserving
   the relative order of extra dimensions and omitting absent `grid`/`time` axes.
   Scalar-selected spatial axes are restored; a scalar-selected grid is not.
-- `grid` selects a spatial sampling grid, with one affine per grid shared across
-  time and every other nonspatial dimension. Different grids may have identical
-  affines. There are no legacy geometry-dimension API aliases.
-- Per-grid time coordinates may have dimensions `(time, grid)` or `(grid, time)`;
-  validation checks increasing timestamps along the named `time` axis.
+- `geometry_dims` explicitly names affine batch axes, independently of data order.
+  Affine shape is `(*geometry_shape, 4, 4)`; a shared affine uses `()` even with
+  nonspatial dimensions. Omitted 3D stacks infer `grid`, or legacy `pose` when no
+  `grid` exists. Other stacks require explicit names, never size-based inference.
+- Geometry dependencies and timestamp dependencies are independent. Legacy 2D
+  time arrays use grid/probe poses; named 2D time DataArrays may use another
+  nonspatial dimension. Validation checks timestamps along the named `time` axis.
+- Native and world axis names remain fixed. Geometry-axis `.isel`/`.sel`, rename,
+  transpose, copy, canonicalization, and existing-axis concat preserve geometry.
+  Unsupported vectorized voxel indexing drops the custom index. Reindex/alignment
+  that changes geometry labels can leave Xarray's raw index stale; VoxelData
+  access/validation rejects mismatching indexed geometry labels.
 - Mutators default to `inplace=False`; `inplace=True` updates the original
   DataArray's coords/attrs and returns it.
 - **Named affines live on `VoxelToWorldIndex.named_affines`**, never in
@@ -108,16 +116,14 @@ still pending.
   re-expresses every other frame as `arr @ inv(action)` (using `np.matmul`, which
   broadcasts `2D @ 3D`).
 - `equals()` ignores named affines: index equality stays geometry-only.
-- Named affine value rules: `(4, 4)` shared frame or `(ngrid, 4, 4)` when geometry
-  is grid-dependent; finite; homogeneous last row `[0, 0, 0, 1]`. Do **not** require
-  equal scale magnitudes across grids (unlike `voxel_to_world`).
-- `isel`:
-  - spatial dims: named frames unchanged;
-  - scalar `grid`: reduce `(ngrid, 4, 4)` to `(4, 4)`;
-  - grid slice / array / list: slice axis 0.
-- `concat` along `grid`: every index must carry the same frame names; all-2D frames
-  must be `allclose` (keep one copy); all-3D frames concatenate along axis 0; mixing
-  2D and 3D raises.
+- Named affine value rules: `(4, 4)` shared frame or the complete ordered geometry
+  batch shape; finite; homogeneous last row `[0, 0, 0, 1]`. Explicit geometry may
+  vary in scale; inferred legacy stacks enforce equal scales at construction.
+- Spatial `isel` leaves named frames unchanged. Geometry `isel` indexes their batch
+  axes, including scalar reduction and named vectorized geometry selection.
+- `concat` along an existing geometry axis requires matching frame names and other
+  coordinates. Shared frames must be `allclose`; stacked frames concatenate along
+  the named axis; mixing shared and stacked frames raises.
 - `set_units`, `reindex_voxels`, `reindex_voxels_like` preserve the input's named
   frames. `reindex_voxels_like` never copies the reference's named frames; inputs
   with grid-dependent geometry must carry identical grid labels in the same order.
@@ -129,16 +135,16 @@ still pending.
 
 ## Public `.vd` API
 
-Properties: `index`, `voxel_dims`, `world_dims`, `is_grid_dependent`,
+Properties: `index`, `voxel_dims`, `world_dims`, `geometry_dims`, `is_grid_dependent`,
 `is_axis_aligned`, `fixed_voxel_coords`, `units`, `voxel_to_world`, `origin`,
 `spacing`, `scalings`, `direction`, `bounding_box`, `affines`.
 
 Methods:
 
 ```python
-set_voxel_to_world(voxel_to_world, *, units=None, named_affines=None, inplace=False)
+set_voxel_to_world(voxel_to_world, *, units=None, geometry_dims=None, named_affines=None, inplace=False)
 set_units(units, *, inplace=False)
-apply(affine_or_name, *, inplace=False)
+apply(affine_or_name, *, geometry_dims=None, inplace=False)
 reindex_voxels(*, inplace=False)
 reindex_voxels_like(reference, *, atol=1e-6, inplace=False)
 to(other, via)
@@ -234,8 +240,8 @@ uv run pytest tests/test_accessors.py::test_apply_named_affine_makes_it_identity
 
 - `create_voxeldata` requires either `spacing` or `voxel_to_world`; a bare
   `dims=("k","j","i")` call raises.
-- A `grid` dim always requires a per-grid `(ngrid, 4, 4)` affine stack, even for one
-  grid.
+- A geometry dependency of size one still needs a leading affine axis. A shared
+  `(4, 4)` affine instead has `geometry_dims=()`, regardless of other dimensions.
 - `VoxelToWorldIndex.named_affines` values are always `z/y/x` world-frame `4x4`
   matrices, independent of how many voxel dims are active.
 - `_replace_index` reattaches through `attach_voxel_to_world_index`, which rebuilds

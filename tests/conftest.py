@@ -219,3 +219,47 @@ def sample_voxeldata_irregular(plain_volume: xr.DataArray) -> xr.DataArray:
     """
     data = plain_volume.assign_coords(k=[0, 2], j=[0, 1, 3], i=[0, 2, 3, 7])
     return vd.attach_voxel_to_world_index(data, np.diag([10.0, 2.0, 3.0, 1.0]))
+
+
+@pytest.fixture
+def multigeometry_data(
+    oblique_affine: np.ndarray, named_affines: dict[str, np.ndarray]
+) -> xr.DataArray:
+    """Return oblique geometry indexed by time and view, but not channel.
+
+    Parameters
+    ----------
+    oblique_affine : numpy.ndarray
+        Nonzero, sheared geometry.
+    named_affines : dict[str, numpy.ndarray]
+        Noncommuting named world frames.
+
+    Returns
+    -------
+    xarray.DataArray
+        Small labelled data with two independent geometry axes and named frames.
+    """
+    affines = np.broadcast_to(oblique_affine, (3, 2, 4, 4)).copy()
+    affines[:, 1, :3, :] = (
+        np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]]) @ affines[:, 1, :3, :]
+    )
+    frames = np.broadcast_to(named_affines["lab"], (3, 2, 4, 4)).copy()
+    for time in range(3):
+        for view in range(2):
+            affines[time, view, :3, 3] += [10 * time, 20 * view, 5 * (time + view)]
+            frames[time, view, :3, 3] += [3 * time, 7 * view, 11 * (time + view)]
+    return vd.create_voxeldata(
+        np.arange(2 * 3 * 2 * 2 * 3 * 4).reshape(2, 3, 2, 2, 3, 4),
+        dims=("channel", "time", "view", "k", "j", "i"),
+        time=[1.0, 2.0, 4.0],
+        extra_coords={"channel": [10, 30], "view": [11, 41]},
+        k=[2, 4],
+        j=[3, 6, 9],
+        i=[5, 7, 9, 11],
+        voxel_to_world=affines,
+        geometry_dims=("time", "view"),
+        affines={
+            "lab": frames,
+            "atlas": named_affines["atlas"],
+        },
+    )

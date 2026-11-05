@@ -15,8 +15,8 @@ A VoxelData array is an `xarray.DataArray` that is always:
   order, including optional special dimensions `time` and `grid`; the native voxel
   indices `k`/`j`/`i` are always present and always last;
 - backed by a single [`VoxelToWorldIndex`](src/voxeldata/geometry.py) attached to
-  the world coordinates `z`/`y`/`x`, which derives them lazily from one affine
-  shared by all data or one affine per `grid`.
+  the world coordinates `z`/`y`/`x`, which derives them lazily from a shared affine
+  or an affine stack indexed by named nonspatial `geometry_dims`.
 
 World coordinates are never stored directly. This keeps cropping, slicing,
 registration, and I/O consistent: the affine always describes the whole physical
@@ -66,12 +66,15 @@ data = vd.create_voxeldata(
 )
 ```
 
-The `grid` dimension selects a spatial sampling grid: each grid has one affine,
-shared across time and all other nonspatial dimensions. Affines may be identical
-across grids. A `grid` dimension requires an `(ngrid, 4, 4)` affine stack, even for
-one grid; without it, geometry uses a single `(4, 4)` affine.
+`geometry_dims` names the nonspatial dimensions indexing an affine stack. For
+example, `geometry_dims=("time", "view")` requires `(ntime, nview, 4, 4)` matrices;
+other axes, such as channels, share geometry. A single `(4, 4)` affine has no
+geometry dependencies, even when nonspatial dimensions are present. Timing
+coordinates are independent of these geometry dependencies.
 
-Grid-dependent geometry carries one affine per grid:
+Existing `(ngrid, 4, 4)` stacks still infer `geometry_dims=("grid",)` (or `"pose"`
+for legacy probe poses when no `grid` is present). Other stacks require explicit
+names; matching lengths never determine their meaning:
 
 ```python
 data = vd.create_voxeldata(
@@ -79,8 +82,16 @@ data = vd.create_voxeldata(
     dims=("grid", "k", "j", "i"),
     grid=np.array([0, 1]),
     voxel_to_world=affines,          # (2, 4, 4)
+    geometry_dims=("grid",),        # explicit; may be omitted for legacy stacks
 )
+
+assert data.vd.geometry_dims == ("grid",)
 ```
+
+**Limitation:** native Xarray `.reindex()` is unsupported on geometry dimensions;
+use `.isel()` or `.sel()` to select/reorder existing labels instead. Alignment that
+changes those labels is also unsupported. This does not affect the explicit
+`.vd.reindex_voxels()` and `.vd.reindex_voxels_like()` geometry operations.
 
 Creation preserves the supplied nonspatial dimension order. For example, both
 `(time, grid, k, j, i)` and `(grid, time, k, j, i)` are valid.
@@ -112,6 +123,8 @@ assumption about modality, acquisition hardware, or signal semantics, so it is
 usable by any package working with spatially referenced voxel data.
 
 ## Development
+
+See the [roadmap](ROADMAP.md) for planned geometry and extraction work.
 
 ```bash
 uv sync            # install dependencies

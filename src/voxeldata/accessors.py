@@ -93,6 +93,17 @@ class VoxelDataAccessor:
         return ("z", "y", "x")
 
     @property
+    def geometry_dims(self) -> tuple[str, ...]:
+        """Named affine dependencies, in affine batch-axis order.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Geometry-dependent nonspatial dimension names.
+        """
+        return self.index.geometry_dims
+
+    @property
     def is_grid_dependent(self) -> bool:
         """Whether geometry still carries a per-grid affine stack.
 
@@ -328,6 +339,7 @@ class VoxelDataAccessor:
         voxel_to_world: Any,
         *,
         units: str | None = None,
+        geometry_dims: tuple[str, ...] | None = None,
         named_affines: dict[str, Any] | None = None,
         inplace: bool = False,
     ) -> xr.DataArray:
@@ -348,6 +360,9 @@ class VoxelDataAccessor:
         units : str, optional
             World coordinate unit. If not provided, keeps the existing unit, or
             defaults to `"mm"` for a plain DataArray.
+        geometry_dims : tuple[str, ...], optional
+            Ordered nonspatial dimensions indexing the affine stack. A shared
+            affine uses `()`. Omitted 3D stacks infer legacy `grid` or `pose`.
         named_affines : mapping[str, numpy.typing.ArrayLike], optional
             Named affine frames for the new geometry.
         inplace : bool, default: False
@@ -374,6 +389,7 @@ class VoxelDataAccessor:
         result = attach_voxel_to_world_index(
             self._obj,
             voxel_to_world,
+            geometry_dims=geometry_dims,
             units=resolved_units,
             named_affines=named_affines,
         )
@@ -397,7 +413,13 @@ class VoxelDataAccessor:
         index = _require_index(self._obj)
         return self._replace_index(index=index, units=units, inplace=inplace)
 
-    def apply(self, affine: Any, *, inplace: bool = False) -> xr.DataArray:
+    def apply(
+        self,
+        affine: Any,
+        *,
+        geometry_dims: tuple[str, ...] | None = None,
+        inplace: bool = False,
+    ) -> xr.DataArray:
         """Apply a world-space affine to the world coordinates.
 
         Parameters
@@ -405,6 +427,11 @@ class VoxelDataAccessor:
         affine : (4, 4) numpy.ndarray or str
             World-space affine, or the name of a stored frame. Applying a named
             frame makes it the identity and re-expresses every other frame.
+        geometry_dims : tuple[str, ...], optional
+            Ordered dependencies of a NumPy action. Defaults to the existing
+            geometry dimensions for a stack, or `()` for a shared affine. Named
+            frames already carry their dependencies. New action dependencies
+            are broadcast by name and added to the geometry.
         inplace : bool, default: False
             Whether to modify the DataArray in-place.
 
@@ -413,7 +440,9 @@ class VoxelDataAccessor:
         xarray.DataArray
             DataArray with updated world coordinates and named frames.
         """
-        return apply_affine(self._obj, affine, inplace=inplace)
+        return apply_affine(
+            self._obj, affine, inplace=inplace, geometry_dims=geometry_dims
+        )
 
     def reindex_voxels(self, *, inplace: bool = False) -> xr.DataArray:
         """Rebase voxel coordinates to dense positions.
@@ -547,6 +576,7 @@ class VoxelDataAccessor:
         result = attach_voxel_to_world_index(
             self._obj,
             index.voxel_to_world,
+            geometry_dims=index.geometry_dims,
             units=index.units if units is None else units,
             named_affines=(
                 index.named_affines if named_affines is None else named_affines

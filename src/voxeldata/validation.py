@@ -11,6 +11,7 @@ import xarray as xr
 from voxeldata._coordinates import get_coordinate_spacing_info
 from voxeldata._dims import CORE_DIMS, GRID_DIM, TIME_DIM, VOXEL_DIMS
 from voxeldata.geometry import (
+    get_voxel_to_world_index,
     get_voxel_to_world_index_spacing,
     get_voxel_to_world_spatial_dims,
     has_voxel_to_world_index,
@@ -110,6 +111,14 @@ def _validate_voxel_to_world_geometry(da: xr.DataArray) -> None:
             "VoxelToWorldIndex-backed world coordinates."
         )
 
+    index = get_voxel_to_world_index(da)
+    assert index is not None
+    if any(d not in da.dims for d in index.geometry_dims) or index.voxel_to_world.shape[
+        :-2
+    ] != tuple(da.sizes[d] for d in index.geometry_dims):
+        raise ValueError(
+            "Geometry dimensions or affine batch shape do not match the DataArray."
+        )
     voxel_dims = get_voxel_to_world_spatial_dims(da)
     if set(voxel_dims) != set(VOXEL_DIMS):
         raise ValueError(
@@ -150,13 +159,14 @@ def _validate_dimension_coordinate(
     coord = da.coords[dim]
     if (
         dim == TIME_DIM
-        and GRID_DIM in da.dims
-        and set(coord.dims) == {TIME_DIM, GRID_DIM}
+        and coord.ndim > 1
+        and TIME_DIM in coord.dims
+        and all(d in da.dims and d not in VOXEL_DIMS for d in coord.dims)
     ):
         # A grid-dependent array may carry each grid's own timestamps directly.
         if not np.issubdtype(coord.dtype, np.number):
             raise ValueError(f"Coordinate {dim!r} must be numeric.")
-        values = np.asarray(coord.transpose(TIME_DIM, GRID_DIM).values)
+        values = np.asarray(coord.transpose(TIME_DIM, ...).values)
         if not np.all(np.isfinite(values)):
             raise ValueError(f"Coordinate {dim!r} contains non-finite numeric values.")
         if values.shape[0] <= 1:

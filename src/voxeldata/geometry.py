@@ -116,58 +116,28 @@ def _reverse_lookup_positions(
 
 
 class VoxelToWorldIndex(Index):
-    """Xarray index owning voxel-to-world geometry.
+    """Xarray index deriving world coordinates from named affine dependencies.
 
-    Always wraps a single [VoxelToWorldTransform][voxeldata.geometry.VoxelToWorldTransform]
-    covering `z`/`y`/`x` jointly — for both oblique and axis-aligned affines. A single
-    shared index (rather than one per axis) is what keeps `.stack()` working: xarray
-    skips an index from stack-index consideration when it's associated with more than
-    one coordinate name (`xarray.core.indexes.IndexVariable.is_multi`), which is
-    exactly what lets `.stack(space=("k", "j", "i"))` fall through cleanly to
-    `k`/`j`/`i`'s own plain indexes instead of colliding with `z`/`y`/`x`'s.
+    Owns `z`/`y`/`x` jointly; voxel and nonspatial dimensions retain their ordinary
+    Xarray indexes. `geometry_dims` records affine batch-axis names and ordering,
+    independently of the parent array order or acquisition timestamp dependencies.
+    World coordinates have only geometry and active voxel dimensions. Coordinates
+    remain lazy through index reconstruction and ordinary slicing.
 
-    For grid-dependent geometry, `grid` is deliberately *not* one of this index's
-    owned coordinate names, even though the wrapped transform still depends on
-    `grid`'s position to pick the right affine out of the stack (exactly like it
-    depends on `k`/`j`/`i`'s positions). `grid` instead gets its own plain,
-    independently indexed coordinate — the same treatment `k`/`j`/`i` already get.
-    Coupling `grid` to this joint index (as `z`/`y`/`x`/`k`/`j`/`i` are) previously
-    broke alignment after a scalar `.sel(grid=0)`: xarray's `_apply_indexes` blindly
-    re-associates every *old* coordinate name with the new index object, so `grid`
-    stayed registered against an index that no longer produced a `grid` variable,
-    and aligning against a genuinely grid-free array (e.g. an atlas mask) raised a
-    spurious `AlignmentError`. Splitting `grid` out sidesteps this: scalar `grid`
-    selection is now resolved by `grid`'s own plain index, which xarray already
-    knows how to correctly drop.
-
-    One consequence: a single combined `.sel(grid=0, z=..., y=..., x=...)` call is no
-    longer supported for grid-dependent geometry, because xarray resolves `grid` and
-    the world coordinates against two different indexes and this index never sees the
-    `grid` label. Reduce `grid` to a scalar first — `.isel(grid=0).sel(z=..., y=...,
-    x=...)` or `.sel(grid=0).sel(z=..., y=..., x=...)` — see `VoxelToWorldIndex.sel`.
-
-    For axis-aligned affines specifically, `.sel()` additionally reimplements ordinary
-    per-axis selection (slices, single labels, independent per-axis queries) directly
-    against the joint transform's diagonal — rather than delegating to
-    `xarray.indexes.CoordinateTransformIndex.sel`, which only supports `nearest`,
-    point-wise, all-axes-at-once queries. That's what a plain, non-index-backed
-    coordinate would offer, and it's what most axis-aligned VoxelData (the common
-    case) expects.
+    World lookup requires a single geometry: first select a scalar on every
+    geometry dimension, then select world coordinates in a separate `.sel` call.
+    Xarray resolves their ordinary indexes separately from this world index.
 
     Parameters
     ----------
     index : xarray.indexes.CoordinateTransformIndex
-        Index wrapping a
-        [VoxelToWorldTransform][voxeldata.geometry.VoxelToWorldTransform].
+        Index wrapping a `VoxelToWorldTransform`.
     voxel_to_world : numpy.typing.ArrayLike
-        Homogeneous voxel-to-world affine.
+        Homogeneous matrices in the transform's geometry dimension order.
     units : str, default: "mm"
-        Physical unit shared by every derived world coordinate (`z`/`y`/`x` are always
-        expressed in the same unit, since they're derived jointly from one affine).
+        Shared physical unit of the world coordinates.
     named_affines : mapping[str, numpy.typing.ArrayLike], optional
-        Named affine frames, each mapping the current world frame to a named frame.
-        Values are either a single `(4, 4)` homogeneous affine shared across grids or
-        an `(ngrid, 4, 4)` stack when geometry is grid-dependent.
+        World-to-reference matrices, shared `(4, 4)` or full geometry-shaped stacks.
     """
 
     def __init__(
@@ -180,10 +150,9 @@ class VoxelToWorldIndex(Index):
         self._index = index
         self.voxel_to_world = np.asarray(voxel_to_world, dtype=np.float64)
         self.units = units
-        n_grids = (
-            self.voxel_to_world.shape[0] if self.voxel_to_world.ndim == 3 else None
+        self.named_affines = _normalize_named_affines(
+            named_affines, self.voxel_to_world.shape[:-2]
         )
-        self.named_affines = _normalize_named_affines(named_affines, n_grids)
 
     def with_named_affines(self, named_affines: Mapping[str, npt.ArrayLike]) -> Self:
         """Return a copy of this index with replaced named affine frames.
@@ -216,22 +185,34 @@ class VoxelToWorldIndex(Index):
         tuple[str, ...]
             Active voxel dimension names.
         """
-        return tuple(dim for dim in self._index.transform.dims if dim != GRID_DIM)
+        transform = self._index.transform
+        assert isinstance(transform, VoxelToWorldTransform)
+        return tuple(transform.active_voxel_coords)
 
     @property
     def is_grid_dependent(self) -> bool:
-        """Whether this index owns a grid-dependent (stacked) affine.
+        """Whether this index owns geometry-dependent affine matrices.
 
         Returns
         -------
         bool
-            Whether the wrapped transform still depends on a `grid` dimension (a
-            stacked `voxel_to_world` affine, not yet reduced by a scalar `grid`
-            selection).
+            Compatibility query: whether any geometry dependency remains.
+            Inspect `geometry_dims` for the actual dependency names.
+        """
+        return bool(self.geometry_dims)
+
+    @property
+    def geometry_dims(self) -> tuple[str, ...]:
+        """Return geometry-dependent dimension names in affine-axis order.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Nonspatial dimensions selecting affine matrices; empty for shared geometry.
         """
         transform = self._index.transform
         assert isinstance(transform, VoxelToWorldTransform)
-        return transform.grid_coord is not None
+        return tuple(transform.geometry_coords)
 
     @property
     def fixed_voxel_coords(self) -> dict[str, float]:
@@ -259,6 +240,7 @@ class VoxelToWorldIndex(Index):
         *,
         units: str = "mm",
         grid_coord: npt.ArrayLike | None = None,
+        geometry_coords: Mapping[str, npt.ArrayLike] | None = None,
         named_affines: Mapping[str, npt.ArrayLike] | None = None,
     ) -> Self:
         """Create a voxel-to-world index from an affine.
@@ -269,14 +251,16 @@ class VoxelToWorldIndex(Index):
             Ordered mapping from voxel dimension name (`k`/`j`/`i`) to its 1D
             voxel-space coordinates.
         voxel_to_world : numpy.typing.ArrayLike
-            Homogeneous affine mapping voxel-space coordinates to world-space
-            coordinates, or a stack of `grid_coord`-many such affines with a leading
-            grid axis.
+            Homogeneous affine, shared or stacked in `geometry_coords` order.
+            Full affines map `(k, j, i)` columns to `(z, y, x)` rows.
         units : str, default: "mm"
             Physical unit shared by every derived world coordinate.
         grid_coord : numpy.typing.ArrayLike, optional
-            1D grid coordinate labels. Required when `voxel_to_world` is a stack of
-            affines (one per grid); must be left unset otherwise.
+            Legacy 1D grid coordinate labels. For general stacks, use
+            `geometry_coords` instead; omit both for a shared affine.
+        geometry_coords : mapping[str, numpy.typing.ArrayLike], optional
+            Ordered 1D coordinate labels for arbitrary affine batch dimensions.
+            Mutually exclusive with the legacy `grid_coord` shortcut.
         named_affines : mapping[str, numpy.typing.ArrayLike], optional
             Named affine frames, each mapping the current world frame to a named
             frame.
@@ -289,7 +273,10 @@ class VoxelToWorldIndex(Index):
         """
         affine = np.asarray(voxel_to_world, dtype=np.float64)
         transform = VoxelToWorldTransform(
-            active_voxel_coords, affine, grid_coord=grid_coord
+            active_voxel_coords,
+            affine,
+            grid_coord=grid_coord,
+            geometry_coords=geometry_coords,
         )
         return cls(
             CoordinateTransformIndex(transform),
@@ -350,6 +337,12 @@ class VoxelToWorldIndex(Index):
         """
         transform = self._index.transform
         assert isinstance(transform, VoxelToWorldTransform)
+        if any(dims_dict.get(d, d) != d for d in VOXEL_DIMS) or any(
+            name_dict.get(d, d) != d for d in WORLD_DIMS
+        ):
+            raise ValueError(
+                "Native voxel and world coordinate names are fixed; rename nonspatial dimensions instead."
+            )
 
         def _rename_dim(dim: str) -> str:
             return str(dims_dict.get(dim, dim))
@@ -364,7 +357,10 @@ class VoxelToWorldIndex(Index):
                 _rename_dim(dim): value
                 for dim, value in transform.fixed_voxel_coords.items()
             },
-            grid_coord=transform.grid_coord,
+            geometry_coords={
+                _rename_dim(dim): values
+                for dim, values in transform.geometry_coords.items()
+            },
         )
         return type(self)(
             CoordinateTransformIndex(new_transform),
@@ -424,30 +420,17 @@ class VoxelToWorldIndex(Index):
             `(4, 4)` frames are unchanged; per-grid stacks are sliced or reduced
             exactly like `voxel_to_world`.
         """
-        grid_indexer = indexers.get(GRID_DIM)
-        if grid_indexer is None:
-            return dict(self.named_affines)
-        new_named: dict[str, npt.NDArray[np.float64]] = {}
+        transform = self._index.transform
+        assert isinstance(transform, VoxelToWorldTransform)
+        result = {}
         for name, affine in self.named_affines.items():
             if affine.ndim == 2:
-                new_named[name] = affine
-                continue
-            if _is_scalar_indexer(grid_indexer):
-                new_named[name] = affine[_scalar_indexer_value(grid_indexer)]
-                continue
-            if isinstance(grid_indexer, Variable):
-                if grid_indexer.ndim != 1:
-                    return None
-                grid_indexer = grid_indexer.values
-            elif isinstance(grid_indexer, list | tuple):
-                grid_indexer = np.asarray(grid_indexer)
-            elif not isinstance(grid_indexer, slice | np.ndarray):
-                return None
-            selected = affine[grid_indexer]
-            if np.ndim(selected) != 3:
-                return None
-            new_named[name] = selected
-        return new_named
+                result[name] = affine
+            else:
+                result[name], _ = _index_geometry(
+                    affine, transform.geometry_coords, indexers
+                )
+        return result
 
     def sel(
         self, labels: dict[Any, Any], method=None, tolerance=None
@@ -507,13 +490,13 @@ class VoxelToWorldIndex(Index):
         coord_labels: dict[Hashable, Any] = {
             name: labels[name] for name in WORLD_DIMS if name in labels
         }
-        if transform.grid_coord is not None:
+        if transform.geometry_coords:
             if coord_labels:
+                dependencies = " and ".join(f"`{d}`" for d in transform.geometry_coords)
                 raise ValueError(
-                    "Selecting world coordinates on grid-dependent geometry requires "
-                    "reducing `grid` to a scalar first, e.g. `.sel(grid=0).sel(z=..., "
-                    "y=..., x=...)`. A single combined "
-                    "`.sel(grid=0, z=..., y=..., x=...)` call is not supported."
+                    f"Selecting world coordinates requires reducing {dependencies} to a scalar "
+                    "first. Select geometry dimensions in a separate .isel()/.sel() call "
+                    "before selecting world coordinates; a single combined call is not supported."
                 )
             return IndexSelResult({})
         if not coord_labels:
@@ -675,16 +658,15 @@ class VoxelToWorldIndex(Index):
             Dimensions to ignore, as used by Xarray's alignment machinery when
             checking whether indexes can be concatenated along one of them (e.g.
             `xr.concat(..., dim="grid")` first aligns every other dimension while
-            excluding `"grid"` from the comparison). When `"grid"` is excluded and
-            either side is grid-dependent, grid labels and affine values are not
-            compared — only spatial geometry (voxel coordinates, fixed dims, world
-            coordinate names) must match.
+            excluding `"grid"` from the comparison). Excluded geometry labels and
+            affine values are not compared; remaining geometry labels, units, voxel
+            coordinates, and fixed voxel dimensions must still match.
 
         Returns
         -------
         bool
             Whether the two indexes have equal affines and wrapped transforms (or,
-            with `"grid"` excluded, equal spatial geometry only).
+            with geometry dimensions excluded, matching remaining geometry).
         """
         if not isinstance(other, VoxelToWorldIndex):
             return False
@@ -692,16 +674,31 @@ class VoxelToWorldIndex(Index):
         other_transform = other._index.transform
         assert isinstance(self_transform, VoxelToWorldTransform)
         assert isinstance(other_transform, VoxelToWorldTransform)
-        if exclude is not None and GRID_DIM in exclude:
+        excluded = set(exclude or ()) & set(self.geometry_dims)
+        if excluded:
+            if (
+                self.geometry_dims != other.geometry_dims
+                or self.voxel_dims != other.voxel_dims
+            ):
+                return False
             return (
-                self_transform.fixed_voxel_coords == other_transform.fixed_voxel_coords
+                self.units == other.units
+                and self_transform.fixed_voxel_coords
+                == other_transform.fixed_voxel_coords
                 and all(
                     np.array_equal(
-                        self_transform.active_voxel_coords[dim],
-                        other_transform.active_voxel_coords[dim],
+                        self_transform.active_voxel_coords[d],
+                        other_transform.active_voxel_coords[d],
                     )
-                    for dim in self_transform.dims
-                    if dim != GRID_DIM
+                    for d in self.voxel_dims
+                )
+                and all(
+                    np.array_equal(
+                        self_transform.geometry_coords[d],
+                        other_transform.geometry_coords[d],
+                    )
+                    for d in self.geometry_dims
+                    if d not in excluded
                 )
             )
         return (
@@ -721,131 +718,114 @@ class VoxelToWorldIndex(Index):
         dim: Hashable,
         positions: Iterable[Iterable[int]] | None = None,
     ) -> Self:
-        """Concatenate grid-dependent indexes along `grid`.
+        """Concatenate indexes along an existing geometry-dependent dimension.
 
         Parameters
         ----------
         indexes : sequence[xarray.Index]
             Indexes to concatenate, in `xarray.concat`'s array order. Each must
-            already be grid-dependent (own a stacked affine), and all must share
-            identical spatial geometry (voxel coordinates, fixed dims, world
-            coordinate names) — only the grid labels and affines differ.
+            depend on the concatenation dimension. Other geometry labels, units,
+            voxel coordinates, and fixed voxel dimensions must match.
         dim : Hashable
-            Dimension being concatenated. Only `"grid"` is supported; concatenating
-            along any other dimension covered by this index (a native voxel
-            dimension) is not yet implemented.
+            Existing geometry dimension being concatenated. Spatial concatenation
+            is not supported. Other geometry coordinates and voxel labels must match.
         positions : iterable[iterable[int]], optional
-            Unused compatibility argument required by Xarray's index API;
-            concatenation always follows `indexes`' order.
+            Explicit positions are not supported; omit to follow input order.
 
         Returns
         -------
         VoxelToWorldIndex
-            Index with concatenated grid labels and affine stacks.
+            Index with concatenated geometry labels, affine stacks, and named frames.
 
         Raises
         ------
         ValueError
-            If `dim` is not `"grid"`, if any index is grid-independent, or if the
-            indexes' spatial geometry does not match.
+            If any index does not depend on `dim`, other geometry differs,
+            or explicit concat positions are supplied.
         """
-        if dim != GRID_DIM:
+        if positions is not None:
             raise ValueError(
-                f"VoxelToWorldIndex only supports concat along {GRID_DIM!r}, got "
-                f"{dim!r}."
+                "Explicit concat positions are not supported for geometry indexes."
             )
-        transforms: list[VoxelToWorldTransform] = []
-        for index in indexes:
-            assert isinstance(index, VoxelToWorldIndex)
-            transform = index._index.transform
-            assert isinstance(transform, VoxelToWorldTransform)
-            if transform.grid_coord is None:
-                raise ValueError(
-                    "Cannot concatenate grid-independent geometry along "
-                    f"{GRID_DIM!r}; every input must already be grid-dependent."
-                )
-            transforms.append(transform)
-        first = transforms[0]
-        for other in transforms[1:]:
-            if (
-                other.dims != first.dims
-                or other.fixed_voxel_coords != first.fixed_voxel_coords
-                or not all(
-                    np.array_equal(
-                        other.active_voxel_coords[dim], first.active_voxel_coords[dim]
-                    )
-                    for dim in first.dims
-                    if dim != GRID_DIM
-                )
-            ):
-                raise ValueError(
-                    "Cannot concatenate VoxelToWorldIndex objects with different "
-                    f"spatial geometry along {GRID_DIM!r}."
-                )
-        new_grid_coord = np.concatenate(
-            [transform.grid_coord for transform in transforms]
-        )
-        new_affine = np.concatenate(
-            [transform.voxel_to_world for transform in transforms], axis=0
-        )
-        new_transform = VoxelToWorldTransform(
-            first.active_voxel_coords,
-            new_affine,
-            fixed_voxel_coords=first.fixed_voxel_coords,
-            grid_coord=new_grid_coord,
-        )
         first_index = indexes[0]
         assert isinstance(first_index, VoxelToWorldIndex)
+        first = first_index._index.transform
+        assert isinstance(first, VoxelToWorldTransform)
+        transforms: list[VoxelToWorldTransform] = []
+        if dim not in first.geometry_coords:
+            raise ValueError(
+                f"Cannot concatenate along {dim!r}; every input must already depend on that geometry dimension."
+            )
+        for index in indexes:
+            if (
+                not isinstance(index, VoxelToWorldIndex)
+                or dim not in index.geometry_dims
+            ):
+                raise ValueError(
+                    "Every input must already be geometry-dependent along the concatenation dimension."
+                )
+            if index.units != first_index.units or not first_index.equals(
+                index, exclude=frozenset({dim})
+            ):
+                raise ValueError(
+                    "Cannot concatenate indexes with different spatial geometry or geometry dimensions."
+                )
+            transform = index._index.transform
+            assert isinstance(transform, VoxelToWorldTransform)
+            transforms.append(transform)
+        assert isinstance(dim, str)
+        axis = first_index.geometry_dims.index(dim)
+        coords = dict(first.geometry_coords)
+        coords[dim] = np.concatenate([t.geometry_coords[dim] for t in transforms])
+        affine = np.concatenate([t.voxel_to_world for t in transforms], axis=axis)
+        transform = VoxelToWorldTransform(
+            first.active_voxel_coords,
+            affine,
+            fixed_voxel_coords=first.fixed_voxel_coords,
+            geometry_coords=coords,
+        )
         return cls(
-            CoordinateTransformIndex(new_transform),
-            new_affine,
+            CoordinateTransformIndex(transform),
+            affine,
             units=first_index.units,
             named_affines=_concat_named_affines(
-                [cast(VoxelToWorldIndex, index) for index in indexes]
+                [cast(VoxelToWorldIndex, i) for i in indexes], axis=axis
             ),
         )
 
 
 def _normalize_named_affines(
     named_affines: Mapping[str, npt.ArrayLike] | None,
-    n_grids: int | None,
+    geometry_shape: tuple[int, ...],
 ) -> dict[str, npt.NDArray[np.float64]]:
-    """Validate and copy named affine frames.
+    """Validate and normalize named affine frames.
 
     Parameters
     ----------
     named_affines : mapping[str, numpy.typing.ArrayLike], optional
         Named affine frames, each mapping the current world frame to a named frame.
-    n_grids : int, optional
-        Grid-stack length expected for per-grid frames; `None` for shared frames.
+    geometry_shape : tuple[int, ...]
+        Expected ordered affine batch shape; empty for shared geometry.
 
     Returns
     -------
     dict[str, numpy.ndarray]
-        Validated named affines as `(4, 4)` or `(n_grids, 4, 4)` float64 arrays.
+        Validated shared or complete geometry-shaped float64 affine arrays.
 
     Raises
     ------
     ValueError
-        If a frame is not a homogeneous `(4, 4)` or `(n_grids, 4, 4)` array, has a
-        non-finite value, or mixes shared and per-grid shapes.
+        If a frame has an incompatible shape, non-finite value, or invalid
+        homogeneous final row.
     """
     if named_affines is None:
         return {}
     result: dict[str, npt.NDArray[np.float64]] = {}
     for name, affine in named_affines.items():
         array = np.asarray(affine, dtype=np.float64)
-        if array.ndim == 3 and n_grids is not None:
-            if array.shape != (n_grids, 4, 4):
-                raise ValueError(
-                    f"Named affine {name!r} has shape {array.shape}, expected "
-                    f"({n_grids}, 4, 4) for grid-dependent geometry."
-                )
-        elif array.shape != (4, 4):
+        if array.shape not in ((4, 4), (*geometry_shape, 4, 4)):
             raise ValueError(
-                f"Named affine {name!r} must have shape (4, 4)"
-                + (f" or ({n_grids}, 4, 4)" if n_grids is not None else "")
-                + f", got {array.shape}."
+                f"Named affine {name!r} must have shape (4, 4) or {(*geometry_shape, 4, 4)}, got {array.shape}."
             )
         if not np.all(np.isfinite(array)):
             raise ValueError(f"Named affine {name!r} contains non-finite values.")
@@ -859,19 +839,23 @@ def _normalize_named_affines(
 
 def _concat_named_affines(
     indexes: Sequence[VoxelToWorldIndex],
+    *,
+    axis: int = 0,
 ) -> dict[str, npt.NDArray[np.float64]]:
-    """Merge named affine frames across grid-concatenated indexes.
+    """Merge named affine frames across geometry-concatenated indexes.
 
     Parameters
     ----------
     indexes : sequence[VoxelToWorldIndex]
-        Indexes being concatenated along `grid`, in order.
+        Indexes being concatenated along a geometry dimension, in order.
+    axis : int, default: 0
+        Affine batch axis corresponding to the concatenation dimension.
 
     Returns
     -------
     dict[str, numpy.ndarray]
         Union of named affines. Shared frames must match across every index and are
-        kept once; per-grid stacks are concatenated along the grid axis.
+        kept once; geometry-dependent stacks concatenate along `axis`.
 
     Raises
     ------
@@ -898,8 +882,8 @@ def _concat_named_affines(
                     f"Shared named affine {name!r} differs across concatenated indexes."
                 )
             result[name] = first_affine
-        elif all(affine.ndim == 3 for affine in affines):
-            result[name] = np.concatenate(affines, axis=0)
+        elif all(affine.ndim > 2 for affine in affines):
+            result[name] = np.concatenate(affines, axis=axis)
         else:
             raise ValueError(
                 f"Named affine {name!r} mixes shared and per-grid frames across "
@@ -909,7 +893,11 @@ def _concat_named_affines(
 
 
 def _validate_voxel_to_world_affine(
-    affine: npt.NDArray[np.float64], ndim: int, *, n_grids: int | None
+    affine: npt.NDArray[np.float64],
+    ndim: int,
+    *,
+    geometry_shape: tuple[int, ...],
+    legacy_grid: bool = False,
 ) -> None:
     """Validate a voxel-to-world affine's shape, finiteness, and homogeneous row.
 
@@ -919,9 +907,10 @@ def _validate_voxel_to_world_affine(
         Homogeneous affine, or a stack of one such affine per grid.
     ndim : int
         Number of spatial dimensions the affine covers.
-    n_grids : int, optional
-        Expected leading grid-stack length. If not provided, `affine` must be a
-        single (grid-independent) affine.
+    geometry_shape : tuple[int, ...]
+        Expected ordered affine batch shape.
+    legacy_grid : bool, default: False
+        Whether to enforce the historical equal-scale invariant for inferred stacks.
 
     Raises
     ------
@@ -930,35 +919,23 @@ def _validate_voxel_to_world_affine(
         grid-stacked `affine`) is not finite or has an invalid homogeneous final row,
         or if grid affines do not share equal spatial scale magnitudes.
     """
-    expected_shape = (ndim + 1, ndim + 1)
-    label = "voxel_to_world"
-    if n_grids is not None:
-        expected_shape = (n_grids, *expected_shape)
-        label = f"voxel_to_world for {n_grids} grids"
+    expected_shape = (*geometry_shape, ndim + 1, ndim + 1)
     if affine.shape != expected_shape:
         raise ValueError(
-            f"{label} must have shape {expected_shape}, got {affine.shape}."
+            f"voxel_to_world stack length or matrix shape must match geometry dimensions: "
+            f"must have shape {expected_shape}, got {affine.shape}."
         )
-
     homogeneous_row = np.zeros(ndim + 1)
     homogeneous_row[-1] = 1.0
-    valid = np.all(np.isfinite(affine)) and np.allclose(
+    if not np.all(np.isfinite(affine)) or not np.allclose(
         affine[..., -1, :], homogeneous_row
-    )
-    if not valid:
-        subject = "Each grid affine" if n_grids is not None else "voxel_to_world"
+    ):
         raise ValueError(
-            f"{subject} must be finite with a valid homogeneous final row."
+            "Each affine must be finite with a valid homogeneous final row."
         )
-
-    if n_grids is not None and n_grids > 1:
-        scalings = np.stack(
-            [
-                np.array(list(get_affine_axis_scalings(affine[p], VOXEL_DIMS).values()))
-                for p in range(n_grids)
-            ]
-        )
-        if not np.allclose(scalings, scalings[0], rtol=1e-6):
+    if legacy_grid and affine.shape[0] > 1:
+        scales = np.linalg.norm(affine[..., :ndim, :ndim], axis=-2)
+        if not np.allclose(scales, scales[0], rtol=1e-6):
             raise ValueError(
                 "All grid affines must share equal spatial scale magnitudes."
             )
@@ -1001,9 +978,10 @@ class VoxelToWorldTransform(CoordinateTransform):
         Voxel-space coordinate value pinned for each dimension that was removed as an
         array dimension by a scalar `isel` selection.
     grid_coord : numpy.typing.ArrayLike, optional
-        1D grid coordinate labels. Required (and `voxel_to_world` must carry a
-        leading grid axis) for grid-dependent geometry; must be left unset for
-        grid-independent geometry.
+        Legacy 1D grid coordinate labels. Mutually exclusive with `geometry_coords`.
+    geometry_coords : mapping[str, numpy.typing.ArrayLike], optional
+        Ordered 1D coordinate labels for every nonspatial affine batch dimension.
+        Omit for a single shared affine. Spatial coordinate conventions do not change.
 
     Raises
     ------
@@ -1020,6 +998,7 @@ class VoxelToWorldTransform(CoordinateTransform):
     voxel_to_world: npt.NDArray[np.float64]
     fixed_voxel_coords: dict[str, float]
     grid_coord: npt.NDArray[Any] | None
+    geometry_coords: dict[str, np.ndarray]
 
     def __init__(
         self,
@@ -1028,6 +1007,7 @@ class VoxelToWorldTransform(CoordinateTransform):
         *,
         fixed_voxel_coords: Mapping[str, float] | None = None,
         grid_coord: npt.ArrayLike | None = None,
+        geometry_coords: Mapping[str, npt.ArrayLike] | None = None,
     ) -> None:
         active_voxel_coords_np = {
             str(dim): np.asarray(values, dtype=np.float64)
@@ -1056,27 +1036,35 @@ class VoxelToWorldTransform(CoordinateTransform):
                 )
 
         affine = np.asarray(voxel_to_world, dtype=np.float64)
-        grid_coord_np: npt.NDArray[Any] | None = None
+        if grid_coord is not None and geometry_coords is not None:
+            raise ValueError("Provide geometry_coords or legacy grid_coord, not both.")
+        coords = {
+            str(dim): np.asarray(values)
+            for dim, values in (geometry_coords or {}).items()
+        }
         if grid_coord is not None:
-            grid_coord_np = np.asarray(grid_coord)
-            if grid_coord_np.ndim != 1:
+            coords = {GRID_DIM: np.asarray(grid_coord)}
+        for dim, values in coords.items():
+            if dim in (*VOXEL_DIMS, *WORLD_DIMS) or values.ndim != 1:
                 raise ValueError(
-                    f"grid_coord must be 1D, got shape {grid_coord_np.shape}."
+                    f"Geometry coordinate {dim!r} must be a nonspatial 1D coordinate."
                 )
-
         _validate_voxel_to_world_affine(
-            affine, ndim, n_grids=None if grid_coord_np is None else grid_coord_np.size
+            affine,
+            ndim,
+            geometry_shape=tuple(len(v) for v in coords.values()),
+            legacy_grid=grid_coord is not None,
         )
-
-        dim_size = {dim: len(values) for dim, values in active_voxel_coords_np.items()}
-        if grid_coord_np is not None:
-            dim_size = {GRID_DIM: grid_coord_np.size, **dim_size}
-
+        dim_size = {dim: len(values) for dim, values in coords.items()}
+        dim_size.update(
+            {dim: len(values) for dim, values in active_voxel_coords_np.items()}
+        )
         super().__init__(coord_names=WORLD_DIMS, dim_size=dim_size)
         self.active_voxel_coords = active_voxel_coords_np
         self.voxel_to_world = affine
         self.fixed_voxel_coords = fixed
-        self.grid_coord = grid_coord_np
+        self.geometry_coords = coords
+        self.grid_coord = coords.get(GRID_DIM)
 
     def forward(self, dim_positions: dict[str, Any]) -> dict[Hashable, Any]:
         """Transform dense array positions into world coordinates.
@@ -1091,37 +1079,27 @@ class VoxelToWorldTransform(CoordinateTransform):
         dict[Hashable, Any]
             World-space coordinate values keyed by `self.coord_names`.
         """
-        active_values = {
-            dim: self.active_voxel_coords[dim][np.asarray(dim_positions[dim])]
-            for dim in self.dims
-            if dim != GRID_DIM
-        }
-        shape = np.asarray(next(iter(active_values.values()))).shape
-        ones = np.ones(shape, dtype=np.float64)
-        voxel_values = [
-            active_values[dim]
-            if dim in active_values
-            else np.full(shape, self.fixed_voxel_coords[dim], dtype=np.float64)
-            for dim in VOXEL_DIMS
-        ]
-        stacked = np.stack([*voxel_values, ones], axis=0).reshape(
-            len(VOXEL_DIMS) + 1, -1
+        positions = np.broadcast_arrays(
+            *(np.asarray(dim_positions[d]) for d in self.dims)
         )
-        num_world = len(self.coord_names)
-
-        if self.grid_coord is not None:
-            grid_positions = (
-                np.broadcast_to(np.asarray(dim_positions[GRID_DIM]), shape)
-                .reshape(-1)
-                .astype(int)
-            )
-            selected_affines = self.voxel_to_world[grid_positions]
-            transformed_flat = np.einsum("mij,jm->mi", selected_affines, stacked)
-            transformed = transformed_flat.T.reshape((num_world + 1, *shape))
-            return {name: transformed[i] for i, name in enumerate(self.coord_names)}
-
-        transformed = (self.voxel_to_world @ stacked).reshape((num_world + 1, *shape))
-        return {name: transformed[i] for i, name in enumerate(self.coord_names)}
+        by_dim = dict(zip(self.dims, positions, strict=True))
+        geometry_positions = tuple(by_dim[d].astype(int) for d in self.geometry_coords)
+        voxel_values = {
+            d: self.active_voxel_coords[d][by_dim[d]] for d in self.active_voxel_coords
+        }
+        result = {}
+        for row, name in enumerate(self.coord_names):
+            value = np.broadcast_to(
+                self.voxel_to_world[..., row, -1][geometry_positions],
+                positions[0].shape,
+            ).copy()
+            for column, dim in enumerate(VOXEL_DIMS):
+                labels = voxel_values.get(dim, self.fixed_voxel_coords.get(dim))
+                value += (
+                    self.voxel_to_world[..., row, column][geometry_positions] * labels
+                )
+            result[name] = value
+        return result
 
     def reverse(self, coord_labels: dict[Hashable, Any]) -> dict[str, Any]:
         """Transform world coordinates back into dense array positions.
@@ -1146,10 +1124,10 @@ class VoxelToWorldTransform(CoordinateTransform):
             reduced to a single grid's affine before reverse world-coordinate lookup
             (see `VoxelToWorldIndex.sel`).
         """
-        if self.grid_coord is not None:
+        if self.geometry_coords:
             raise ValueError(
                 "Reverse world-coordinate lookup requires grid-independent "
-                "geometry; select a scalar grid first."
+                f"geometry; select a scalar for geometry dimensions {tuple(self.geometry_coords)!r} first."
             )
         world_values = [np.asarray(coord_labels[name]) for name in self.coord_names]
         shape = np.asarray(world_values[0]).shape
@@ -1193,10 +1171,11 @@ class VoxelToWorldTransform(CoordinateTransform):
         """
         if not isinstance(other, VoxelToWorldTransform):
             return False
-        self_grid, other_grid = self.grid_coord, other.grid_coord
-        grid_equal = (self_grid is None) == (other_grid is None) and (
-            self_grid is None
-            or (other_grid is not None and np.array_equal(self_grid, other_grid))
+        grid_equal = tuple(self.geometry_coords) == tuple(
+            other.geometry_coords
+        ) and all(
+            np.array_equal(values, other.geometry_coords[dim])
+            for dim, values in self.geometry_coords.items()
         )
         return (
             self.dims == other.dims
@@ -1206,8 +1185,7 @@ class VoxelToWorldTransform(CoordinateTransform):
                 np.array_equal(
                     self.active_voxel_coords[dim], other.active_voxel_coords[dim]
                 )
-                for dim in self.dims
-                if dim != GRID_DIM
+                for dim in self.active_voxel_coords
             )
             and self.voxel_to_world.shape == other.voxel_to_world.shape
             and np.allclose(self.voxel_to_world, other.voxel_to_world)
@@ -1235,59 +1213,39 @@ class VoxelToWorldTransform(CoordinateTransform):
             nothing is gained by keeping it around as `fixed_voxel_coords`-style
             bookkeeping.
         """
-        new_active_voxel_coords = dict(self.active_voxel_coords)
-        new_fixed = dict(self.fixed_voxel_coords)
-        new_grid_coord = self.grid_coord
-        new_affine = self.voxel_to_world
         for dim, indexer in indexers.items():
-            if dim == GRID_DIM:
-                if self.grid_coord is None:
-                    continue
-                if _is_scalar_indexer(indexer):
-                    new_affine = self.voxel_to_world[_scalar_indexer_value(indexer)]
-                    new_grid_coord = None
-                    continue
-                if isinstance(indexer, Variable):
-                    if indexer.ndim != 1:
-                        return None
-                    indexer = indexer.values
-                elif isinstance(indexer, list | tuple):
-                    indexer = np.asarray(indexer)
-                elif not isinstance(indexer, slice | np.ndarray):
-                    return None
-                grid_values = self.grid_coord[indexer]
-                if np.ndim(grid_values) != 1:
-                    return None
-                new_grid_coord = grid_values
-                new_affine = self.voxel_to_world[indexer]
+            if dim not in self.dims or isinstance(indexer, slice):
                 continue
-            if dim not in self.dims:
+            values = np.asarray(indexer)
+            if values.size and values.dtype.kind not in "iub":
+                return None
+            if values.ndim > 1 and not isinstance(indexer, Variable | xr.DataArray):
+                return None
+        new_affine, coords = _index_geometry(
+            self.voxel_to_world, self.geometry_coords, indexers
+        )
+        new_active = dict(self.active_voxel_coords)
+        new_fixed = dict(self.fixed_voxel_coords)
+        for dim, indexer in indexers.items():
+            if dim not in new_active:
                 continue
             if _is_scalar_indexer(indexer):
                 new_fixed[dim] = float(
-                    self.active_voxel_coords[dim][_scalar_indexer_value(indexer)]
+                    new_active.pop(dim)[_scalar_indexer_value(indexer)]
                 )
-                del new_active_voxel_coords[dim]
-                continue
-            if isinstance(indexer, Variable):
-                if indexer.ndim != 1:
+            else:
+                if isinstance(indexer, Variable):
+                    if indexer.ndim != 1 or indexer.dims != (dim,):
+                        return None
+                    indexer = indexer.values
+                values = new_active[dim][indexer]
+                if values.ndim != 1:
                     return None
-                indexer = indexer.values
-            elif isinstance(indexer, list | tuple):
-                indexer = np.asarray(indexer)
-            elif not isinstance(indexer, slice | np.ndarray):
-                return None
-            values = self.active_voxel_coords[dim][indexer]
-            if np.ndim(values) != 1:
-                return None
-            new_active_voxel_coords[dim] = values
-        if not new_active_voxel_coords:
+                new_active[dim] = values
+        if not new_active:
             return None
         return type(self)(
-            new_active_voxel_coords,
-            new_affine,
-            fixed_voxel_coords=new_fixed,
-            grid_coord=new_grid_coord,
+            new_active, new_affine, fixed_voxel_coords=new_fixed, geometry_coords=coords
         )
 
     def __repr__(self) -> str:
@@ -1327,6 +1285,7 @@ def attach_voxel_to_world_index(
     *,
     units: str = "mm",
     named_affines: Mapping[str, npt.ArrayLike] | None = None,
+    geometry_dims: tuple[str, ...] | None = None,
 ) -> xr.DataArray:
     """Attach world coordinates to a DataArray, making it a VoxelData array.
 
@@ -1344,15 +1303,17 @@ def attach_voxel_to_world_index(
         native voxel dims `k`/`j`/`i`.
     voxel_to_world : (4, 4) numpy.ndarray or (ngrid, 4, 4) numpy.ndarray
         Homogeneous affine mapping voxel-space coordinates to world-space
-        coordinates, or a stack of one such affine per grid. A `grid` dimension
-        selects spatial sampling grids and requires a matching per-grid affine
-        stack, even for a single grid. Each affine is shared across all other
-        nonspatial dimensions; different grids may have identical affines.
+        coordinates, or matrices indexed by `geometry_dims`. Unrelated dimensions
+        share geometry and never expand the derived world coordinates.
     units : str, default: "mm"
         Physical unit shared by every derived world coordinate.
     named_affines : mapping[str, numpy.typing.ArrayLike], optional
         Named affine frames to store on the resulting index, each mapping world
-        coordinates to a named frame.
+        coordinates to a named frame. Values are `(4, 4)` or full geometry-shaped stacks.
+    geometry_dims : tuple[str, ...], optional
+        Ordered nonspatial affine batch dimensions, validated against `data`.
+        A single affine uses `()`. Omitted 3D stacks infer legacy `grid`, or `pose`
+        when no `grid` is present; other stacks require explicit names.
 
     Returns
     -------
@@ -1398,31 +1359,47 @@ def attach_voxel_to_world_index(
 
     voxel_to_world_array = np.asarray(voxel_to_world, dtype=np.float64)
 
-    grid_coord = None
-    if voxel_to_world_array.ndim == 3:
-        if GRID_DIM not in data.dims:
+    legacy_grid = (
+        geometry_dims is None
+        and voxel_to_world_array.ndim == 3
+        and any(dim in data.dims for dim in (GRID_DIM, "pose"))
+    )
+    if geometry_dims is None:
+        if voxel_to_world_array.ndim == 2:
+            geometry_dims = ()
+        elif voxel_to_world_array.ndim == 3 and GRID_DIM in data.dims:
+            geometry_dims = (GRID_DIM,)
+        elif voxel_to_world_array.ndim == 3 and "pose" in data.dims:
+            geometry_dims = ("pose",)
+        else:
             raise ValueError(
-                "A stacked voxel_to_world affine (one per grid) requires data to "
-                f"have a {GRID_DIM!r} dimension."
+                "A stacked voxel_to_world requires explicit geometry_dims (or a legacy 'grid'/'pose' dimension)."
             )
-        if GRID_DIM not in data.coords or data.coords[GRID_DIM].dims != (GRID_DIM,):
+    geometry_dims = tuple(geometry_dims)
+    if len(set(geometry_dims)) != len(geometry_dims):
+        raise ValueError("Geometry dimensions must not contain duplicates.")
+    coords = {}
+    for dim in geometry_dims:
+        if dim not in data.dims or dim in (*VOXEL_DIMS, *WORLD_DIMS):
             raise ValueError(
-                f"{GRID_DIM!r} dimension must have a matching 1D coordinate."
+                f"Geometry dimension {dim!r} must exist as a nonspatial data dimension."
             )
-        if voxel_to_world_array.shape[0] != data.sizes[GRID_DIM]:
-            raise ValueError(
-                f"voxel_to_world grid stack length {voxel_to_world_array.shape[0]} "
-                f"does not match data's {GRID_DIM!r} size {data.sizes[GRID_DIM]}."
+        if dim in data.coords and data.coords[dim].dims != (dim,):
+            # Acquisition timestamps may themselves be multidimensional; positions
+            # still select geometry independently of timestamp values.
+            coords[dim] = np.arange(data.sizes[dim])
+        else:
+            coords[dim] = (
+                data.coords[dim].values
+                if dim in data.coords
+                else np.arange(data.sizes[dim])
             )
-        grid_coord = data.coords[GRID_DIM].values
-    elif GRID_DIM in data.dims:
-        raise ValueError(
-            f"data has a {GRID_DIM!r} dimension but voxel_to_world is a single "
-            "shared (4, 4) affine; every grid must carry its own affine, e.g. "
-            "voxel_to_world=affine[np.newaxis] for a single grid. For a nonspatial "
-            "axis that does not select geometry, use a dimension name other than "
-            "'grid'."
-        )
+    _validate_voxel_to_world_affine(
+        voxel_to_world_array,
+        3,
+        geometry_shape=tuple(data.sizes[d] for d in geometry_dims),
+        legacy_grid=legacy_grid,
+    )
 
     base = data.drop_vars(
         [name for name in WORLD_DIMS if name in data.coords], errors="ignore"
@@ -1431,7 +1408,7 @@ def attach_voxel_to_world_index(
         active_voxel_coords,
         voxel_to_world_array,
         units=units,
-        grid_coord=grid_coord,
+        geometry_coords=coords,
         named_affines=named_affines,
     )
     return base.assign_coords(xr.Coordinates.from_xindex(index))
@@ -1472,18 +1449,13 @@ def _fold_fixed_dims_into_affine(
     """
     if not fixed_voxel_coords:
         return full_affine.copy()
-    is_grid_stacked = full_affine.ndim == 3
     linear = full_affine[..., :-1, :-1]
     translation = full_affine[..., :-1, -1].copy()
     for dim, value in fixed_voxel_coords.items():
         translation = translation + linear[..., :, all_dims.index(dim)] * value
     active_columns = [all_dims.index(dim) for dim in active_dims]
     num_world = full_affine.shape[-2] - 1
-    output_shape = (
-        (full_affine.shape[0], num_world + 1, len(active_dims) + 1)
-        if is_grid_stacked
-        else (num_world + 1, len(active_dims) + 1)
-    )
+    output_shape = (*full_affine.shape[:-2], num_world + 1, len(active_dims) + 1)
     reduced = np.zeros(output_shape, dtype=np.float64)
     reduced[..., :num_world, :-1] = linear[..., :, active_columns]
     reduced[..., :num_world, -1] = translation
@@ -1507,9 +1479,29 @@ def get_voxel_to_world_index(data: xr.DataArray) -> VoxelToWorldIndex | None:
         coordinate name, and [VoxelToWorldIndex][voxeldata.geometry.VoxelToWorldIndex]
         always wraps `z`/`y`/`x` jointly, so the same single object is simply
         registered three times.
+
+    Raises
+    ------
+    ValueError
+        If geometry dimensions or indexed labels no longer match the stored
+        metadata, as can happen after unsupported geometry-axis reindexing.
     """
     for index in data.xindexes.values():
         if isinstance(index, VoxelToWorldIndex):
+            transform = index._index.transform
+            assert isinstance(transform, VoxelToWorldTransform)
+            for dim, labels in transform.geometry_coords.items():
+                if dim not in data.dims or data.sizes[dim] != len(labels):
+                    raise ValueError(
+                        f"Geometry dimension {dim!r} no longer matches the affine index."
+                    )
+                if dim in data.xindexes and not np.array_equal(
+                    data.coords[dim].values, labels
+                ):
+                    raise ValueError(
+                        f"Geometry coordinate {dim!r} no longer matches the affine index. "
+                        "Use .isel()/.sel() rather than .reindex(), alignment, or coordinate replacement on geometry dimensions."
+                    )
             return index
     return None
 
@@ -1650,7 +1642,13 @@ def restore_voxel_to_world_index(data: xr.DataArray) -> xr.DataArray:
         dim not in data.dims or data.coords[dim].dims != (dim,) for dim in VOXEL_DIMS
     ):
         return data
-    return attach_voxel_to_world_index(data, index.voxel_to_world, units=index.units)
+    return attach_voxel_to_world_index(
+        data,
+        index.voxel_to_world,
+        units=index.units,
+        geometry_dims=index.geometry_dims,
+        named_affines=index.named_affines,
+    )
 
 
 def has_axis_aligned_voxel_to_world_index(data: xr.DataArray) -> bool:
@@ -1742,10 +1740,12 @@ def require_scalar_grid_affine(
         grid-dependent geometry (a stacked affine).
     """
     affine = get_voxel_to_world_affine(data)
-    if affine.ndim == 3:
+    if affine.ndim > 2:
+        index = get_voxel_to_world_index(data)
+        assert index is not None
         raise ValueError(
-            f"{context} requires grid-independent geometry; select a scalar grid "
-            "first, e.g. `data.isel(grid=0)`."
+            f"{context} requires grid-independent geometry; select scalar values "
+            f"for geometry dimensions {index.geometry_dims!r} first."
         )
     return affine
 
@@ -1867,9 +1867,8 @@ def get_affine_axis_scalings(
     ----------
     voxel_to_world : (N+1, N+1) numpy.ndarray or (ngrid, N+1, N+1) numpy.ndarray
         Homogeneous affine mapping voxel space to world space, or a stack of one
-        such affine per grid. For a stack, the first grid's scalings are returned;
-        grid-dependent geometry validates equal spatial scale magnitudes across
-        grids before using this helper.
+        such affine per grid. For a stack, scalings must agree across
+        geometries; otherwise select a geometry before using this scalar helper.
     voxel_dims : tuple[str, ...]
         Voxel-space dimension names in affine column order.
 
@@ -1879,8 +1878,13 @@ def get_affine_axis_scalings(
         Euclidean norms of the affine column vectors, keyed by voxel-space dimension.
     """
     affine = np.asarray(voxel_to_world, dtype=np.float64)
-    if affine.ndim == 3:
-        affine = affine[0]
+    if affine.ndim > 2:
+        scales = np.linalg.norm(affine[..., :-1, :-1], axis=-2)
+        if not np.allclose(scales, scales.reshape(-1, scales.shape[-1])[0]):
+            raise ValueError(
+                "Spatial scalings vary across geometry dimensions; select a single geometry first."
+            )
+        affine = affine.reshape(-1, *affine.shape[-2:])[0]
     linear = affine[:-1, :-1]
     return {
         dim: np.float64(np.linalg.norm(linear[:, i])).item()
@@ -1945,3 +1949,40 @@ def get_voxel_to_world_spacings_from_coords(
         else:
             spacings[dim] = abs(step) * scalings[dim]
     return spacings
+
+
+def _index_geometry(
+    affine: np.ndarray,
+    geometry_coords: Mapping[str, np.ndarray],
+    indexers: Mapping[str, Any],
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    """Index an affine stack by named dimensions using Xarray's own semantics.
+
+    Parameters
+    ----------
+    affine : numpy.ndarray
+        Affine stack to index.
+    geometry_coords : mapping[str, numpy.ndarray]
+        Ordered coordinate labels for its batch axes.
+    indexers : mapping[str, Any]
+        Scalar, slice, outer, or vectorized dimension indexers.
+
+    Returns
+    -------
+    affine : numpy.ndarray
+        Selected affine stack.
+    geometry_coords : dict[str, numpy.ndarray]
+        Remaining batch dimensions and coordinate labels.
+    """
+    row, column = object(), object()
+    values = xr.DataArray(
+        affine, dims=(*geometry_coords, row, column), coords=geometry_coords
+    )
+    selected = values.isel({d: v for d, v in indexers.items() if d in geometry_coords})
+    coords = {
+        str(d): selected.coords[d].values
+        if d in selected.coords and selected.coords[d].dims == (d,)
+        else np.arange(selected.sizes[d])
+        for d in selected.dims[:-2]
+    }
+    return selected.values, coords

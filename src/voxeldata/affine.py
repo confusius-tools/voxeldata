@@ -6,15 +6,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 import xarray as xr
 
-from voxeldata._dims import GRID_DIM, WORLD_DIMS
+from voxeldata._coordinates import get_representative_step
+from voxeldata._dims import VOXEL_DIMS, WORLD_DIMS
 from voxeldata.geometry import (
     attach_voxel_to_world_index,
-    get_affine_axis_scalings,
     get_voxel_to_world_affine,
-    get_voxel_to_world_direction_matrix,
     get_voxel_to_world_index,
-    get_voxel_to_world_index_origin,
-    get_voxel_to_world_index_spacing,
     get_voxel_to_world_spatial_dims,
     get_voxel_to_world_units,
     has_voxel_to_world_index,
@@ -51,9 +48,8 @@ def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
     (2, 3) xarray.DataArray
         Bounding box with dims `(bound, component)`, where `bound` is
         `["min", "max"]` and `component` is `["z", "y", "x"]`, and a `units` attr
-        from the voxel-to-world index. Grid-dependent geometry adds a leading
-        `grid` dim carrying the input's `grid` coordinate, one bounding box per
-        grid.
+        from the voxel-to-world index. Geometry-dependent dimensions are prepended
+        in affine-axis order, giving one bounding box per geometry.
 
     Raises
     ------
@@ -77,15 +73,14 @@ def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
     # Half a voxel per dim in voxel-coordinate units: the world spacing (world length per
     # voxel, `None` for irregular coordinates) divided by the affine column norm
     # (world length per voxel-coordinate unit).
-    scalings = get_affine_axis_scalings(affine, voxel_dims)
-    half_steps: dict[str, float] = {}
-    for dim, world_spacing in get_voxel_to_world_index_spacing(data).items():
-        if world_spacing is None:
+    half_steps = {}
+    for dim in voxel_dims:
+        step, approximate = get_representative_step(data.coords[dim].values)
+        if approximate:
             raise ValueError(
-                f"Voxel dim '{dim}' has irregular coordinates; the voxel extent, and "
-                "therefore the bounding box, is undefined."
+                f"Voxel dim {dim!r} has irregular coordinates; its bounding box is undefined."
             )
-        half_steps[dim] = 0.5 * world_spacing / scalings[dim]
+        half_steps[dim] = 0.5 * (abs(step) if step is not None else 1.0)
 
     # The 8 corners of the voxel-coordinate box extended by half a voxel per dim, as
     # homogeneous column vectors.
@@ -114,9 +109,10 @@ def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
         "component": np.array(WORLD_DIMS, dtype=np.str_),
     }
     dims = ("bound", "component")
-    if affine.ndim == 3:
-        dims = (GRID_DIM, *dims)
-        coords[GRID_DIM] = data.coords[GRID_DIM].values
+    geometry_dims = _require_voxel_to_world_index(data).geometry_dims
+    dims = (*geometry_dims, *dims)
+    for dim in geometry_dims:
+        coords[dim] = _geometry_labels(data, dim)
     return xr.DataArray(
         bounds,
         dims=dims,
@@ -167,7 +163,13 @@ def get_relative_affine(
         raise KeyError(f"'{via}' not found in other's named affines.")
     self_affine = np.asarray(self_index.named_affines[via], dtype=np.float64)
     other_affine = np.asarray(other_index.named_affines[via], dtype=np.float64)
-    return np.linalg.inv(other_affine) @ self_affine
+    self_dims = self_index.geometry_dims if self_affine.ndim > 2 else ()
+    other_dims = other_index.geometry_dims if other_affine.ndim > 2 else ()
+    _check_geometry_labels(da, other, set(self_dims) & set(other_dims))
+    dims = tuple(dict.fromkeys((*self_dims, *other_dims)))
+    return np.linalg.inv(_align_affine(other_affine, other_dims, dims)) @ _align_affine(
+        self_affine, self_dims, dims
+    )
 
 
 def _require_voxel_to_world_index(da: xr.DataArray) -> "VoxelToWorldIndex":
@@ -198,6 +200,8 @@ def apply_affine(
     da: xr.DataArray,
     affine: "npt.NDArray[np.float64] | str",
     inplace: bool = False,
+    *,
+    geometry_dims: tuple[str, ...] | None = None,
 ) -> xr.DataArray:
     """Apply a world-space affine to a DataArray's world coordinates.
 
@@ -215,6 +219,10 @@ def apply_affine(
         among the index's named affine frames.
     inplace : bool, default: False
         Whether to modify the DataArray in-place.
+    geometry_dims : tuple[str, ...], optional
+        Named batch axes of a NumPy action. Omitted stacked actions use the
+        existing geometry dimensions; shared actions use `()`. Explicit axes
+        may select any nonspatial dimensions and are aligned by name.
 
     Returns
     -------
@@ -252,27 +260,34 @@ def apply_affine(
         affine = index.named_affines[applied_key]
     affine_array = np.asarray(affine, dtype=np.float64)
 
-    voxel_to_world = get_voxel_to_world_affine(da)
-    is_grid_stacked = voxel_to_world.ndim == 3
-    # A single (4, 4) world-space affine broadcasts over every grid (numpy's `@`
-    # already does this correctly: `affine_array @ voxel_to_world[p]` per grid); a
-    # grid-dependent affine_array must match the stack length exactly instead.
-    valid_shape = (
-        affine_array.shape == voxel_to_world.shape[1:]
-        or affine_array.shape == voxel_to_world.shape
-        if is_grid_stacked
-        else affine_array.shape == voxel_to_world.shape
+    voxel_to_world = index.voxel_to_world
+    action_dims = (
+        (() if affine_array.ndim == 2 else index.geometry_dims)
+        if geometry_dims is None
+        else tuple(geometry_dims)
     )
-    if not valid_shape:
-        expected = (
-            f"{voxel_to_world.shape[1:]} or {voxel_to_world.shape}"
-            if is_grid_stacked
-            else f"{voxel_to_world.shape}"
-        )
+    if applied_key is not None and geometry_dims is not None:
         raise ValueError(
-            "voxel-to-world data requires an affine with shape matching "
-            f"voxel_to_world ({expected}), got {affine_array.shape}."
+            "Named affines already have geometry dimensions; do not override them."
         )
+    if len(set(action_dims)) != len(action_dims) or any(
+        d not in da.dims or d in VOXEL_DIMS for d in action_dims
+    ):
+        raise ValueError(
+            "Affine geometry_dims must be unique nonspatial data dimensions."
+        )
+    expected = tuple(da.sizes[d] for d in action_dims) + (4, 4)
+    if affine_array.shape != expected:
+        raise ValueError(
+            f"World affine requires shape matching geometry dimensions {expected}, got {affine_array.shape}."
+        )
+    if not np.all(np.isfinite(affine_array)) or not np.allclose(
+        affine_array[..., -1, :], [0.0, 0.0, 0.0, 1.0]
+    ):
+        raise ValueError("World affine must be finite and homogeneous.")
+    dims = tuple(dict.fromkeys((*index.geometry_dims, *action_dims)))
+    affine_array = _align_affine(affine_array, action_dims, dims)
+    voxel_to_world = _align_affine(voxel_to_world, index.geometry_dims, dims)
 
     inv_affine = np.linalg.inv(affine_array)
     new_named: dict[str, npt.NDArray[np.float64]] = {}
@@ -282,11 +297,22 @@ def apply_affine(
             # instead of `arr @ inv(arr)`, which carries floating-point error.
             new_named[stored_key] = np.eye(affine_array.shape[-1])
             continue
-        new_named[stored_key] = np.asarray(val, dtype=np.float64) @ inv_affine
+        stored_dims = index.geometry_dims if val.ndim > 2 else ()
+        updated = _align_affine(val, stored_dims, dims) @ inv_affine
+        new_named[stored_key] = (
+            updated.reshape(4, 4)
+            if not stored_dims and not action_dims
+            else np.broadcast_to(
+                updated, tuple(da.sizes[d] for d in dims) + (4, 4)
+            ).copy()
+        )
 
     result = attach_voxel_to_world_index(
         da,
-        affine_array @ voxel_to_world,
+        np.broadcast_to(
+            affine_array @ voxel_to_world, tuple(da.sizes[d] for d in dims) + (4, 4)
+        ),
+        geometry_dims=dims,
         units=get_voxel_to_world_units(da),
         named_affines=new_named,
     )
@@ -326,7 +352,8 @@ def reindex_voxels(da: xr.DataArray) -> xr.DataArray:
         `voxel_to_world` affine. World coordinates are unchanged. For grid-dependent
         geometry, `voxel_to_world` stays a per-grid stack: each grid keeps its own
         origin and direction (spacing is shared, per the equal-scale invariant), so
-        rebasing is unambiguous per grid and every grid is reindexed at once.
+        rebasing is performed for every geometry without evaluating world coordinates.
+        Explicit geometry may have varying spatial scalings.
 
     Raises
     ------
@@ -334,49 +361,28 @@ def reindex_voxels(da: xr.DataArray) -> xr.DataArray:
         If `da` lacks voxel-to-world geometry, or if world spacing is undefined for
         any voxel dimension.
     """
-    if not has_voxel_to_world_index(da):
-        raise ValueError("DataArray must have a voxel-to-world index.")
-
-    voxel_dims = get_voxel_to_world_spatial_dims(da)
-
-    spacing = get_voxel_to_world_index_spacing(da)
-    missing_spacing = [dim for dim in voxel_dims if spacing[dim] is None]
-    if missing_spacing:
+    index = _require_voxel_to_world_index(da)
+    if tuple(index.voxel_dims) != VOXEL_DIMS:
         raise ValueError(
-            f"Cannot reindex voxels because spacing is undefined for dimensions "
-            f"{missing_spacing!r}."
+            "Canonicalize scalar-selected voxel dimensions before reindexing."
         )
-    spacing_diag = np.diag([spacing[dim] for dim in voxel_dims])
-    ndim = len(voxel_dims)
-
-    def _new_grid_affine(grid_da: xr.DataArray) -> "npt.NDArray[np.float64]":
-        origin = get_voxel_to_world_index_origin(grid_da)
-        # Already expressed in dense-position terms (accounts for a descending
-        # voxel coordinate, e.g. after `.isel(dim=slice(None, None, -1))`),
-        # matching how `spacing` (a magnitude) and dense array position combine
-        # below.
-        direction = get_voxel_to_world_direction_matrix(grid_da)
-        affine = np.eye(ndim + 1, dtype=np.float64)
-        affine[:ndim, :ndim] = direction @ spacing_diag
-        affine[:ndim, ndim] = [origin[name] for name in WORLD_DIMS]
-        return affine
-
-    if GRID_DIM in da.dims and get_voxel_to_world_affine(da).ndim == 3:
-        new_affine = np.stack(
-            [
-                _new_grid_affine(da.isel({GRID_DIM: grid}))
-                for grid in range(da.sizes[GRID_DIM])
-            ]
-        )
-    else:
-        new_affine = _new_grid_affine(da)
-
-    reindexed = da.assign_coords({dim: np.arange(da.sizes[dim]) for dim in voxel_dims})
+    label_from_position = np.eye(4)
+    for axis, dim in enumerate(VOXEL_DIMS):
+        labels = np.asarray(da.coords[dim].values)
+        step, approximate = get_representative_step(labels)
+        if approximate:
+            raise ValueError(
+                f"Cannot reindex voxels because spacing is undefined for {dim!r}."
+            )
+        label_from_position[axis, axis] = step if step is not None else 1.0
+        label_from_position[axis, -1] = labels[0]
+    reindexed = da.assign_coords({dim: np.arange(da.sizes[dim]) for dim in VOXEL_DIMS})
     return attach_voxel_to_world_index(
         reindexed,
-        new_affine,
-        units=get_voxel_to_world_units(da),
-        named_affines=_require_voxel_to_world_index(da).named_affines,
+        index.voxel_to_world @ label_from_position,
+        geometry_dims=index.geometry_dims,
+        units=index.units,
+        named_affines=index.named_affines,
     )
 
 
@@ -425,46 +431,120 @@ def reindex_voxels_like(
         raise ValueError("data must have a voxel-to-world index.")
     if not has_voxel_to_world_index(reference):
         raise ValueError("reference must have a voxel-to-world index.")
-
-    voxel_dims = get_voxel_to_world_spatial_dims(data)
-    reference_voxel_dims = get_voxel_to_world_spatial_dims(reference)
-    if voxel_dims != reference_voxel_dims:
+    source_index = _require_voxel_to_world_index(data)
+    reference_index = _require_voxel_to_world_index(reference)
+    if get_voxel_to_world_spatial_dims(data) != get_voxel_to_world_spatial_dims(
+        reference
+    ) or any(data.sizes[d] != reference.sizes[d] for d in source_index.voxel_dims):
         raise ValueError(
-            f"data and reference must have the same voxel dimensions; got "
-            f"{voxel_dims!r} and {reference_voxel_dims!r}."
+            "data and reference must have the same voxel grid shape and dimensions."
         )
-    shape = tuple(data.sizes[dim] for dim in voxel_dims)
-    reference_shape = tuple(reference.sizes[dim] for dim in voxel_dims)
-    if shape != reference_shape:
+    if set(source_index.geometry_dims) != set(reference_index.geometry_dims):
         raise ValueError(
-            f"data and reference must have the same voxel grid shape to reindex; "
-            f"got {shape!r} and {reference_shape!r}."
+            "data and reference must have the same grid coordinates and geometry dimensions."
         )
-
-    has_grid = GRID_DIM in data.dims
-    if has_grid != (GRID_DIM in reference.dims) or (
-        has_grid
-        and not np.array_equal(
-            data.coords[GRID_DIM].values, reference.coords[GRID_DIM].values
+    _check_geometry_labels(data, reference, set(source_index.geometry_dims))
+    if source_index.units != reference_index.units:
+        raise ValueError("data and reference must have matching spatial units.")
+    dims = reference_index.geometry_dims
+    source_affine = _align_affine(
+        reindex_voxels(data).vd.index.voxel_to_world, source_index.geometry_dims, dims
+    )
+    reference_affine = reindex_voxels(reference).vd.index.voxel_to_world
+    if not np.allclose(source_affine, reference_affine, atol=atol, rtol=0):
+        raise ValueError(
+            "data and reference are not aligned in world space; reindex_voxels_like requires the exact same world grid."
         )
-    ):
-        raise ValueError("data and reference must have the same grid coordinates.")
-    world_dims = (GRID_DIM, *voxel_dims) if has_grid else voxel_dims
-
-    for name in WORLD_DIMS:
-        data_values = data.coords[name].transpose(*world_dims).values
-        reference_values = reference.coords[name].transpose(*world_dims).values
-        if not np.allclose(data_values, reference_values, atol=atol):
-            raise ValueError(
-                f"data and reference are not aligned in world space: coordinate "
-                f"{name!r} differs by more than {atol}. reindex_voxels_like requires "
-                "data to already occupy reference's exact world grid."
-            )
-
-    relabeled = data.assign_coords({dim: reference.coords[dim] for dim in voxel_dims})
+    frames = {
+        name: _align_affine(value, source_index.geometry_dims, dims)
+        if value.ndim > 2
+        else value
+        for name, value in source_index.named_affines.items()
+    }
+    relabeled = data.assign_coords(
+        {d: reference.coords[d] for d in source_index.voxel_dims}
+    )
     return attach_voxel_to_world_index(
         relabeled,
-        get_voxel_to_world_affine(reference),
-        units=get_voxel_to_world_units(reference),
-        named_affines=_require_voxel_to_world_index(data).named_affines,
+        reference_index.voxel_to_world,
+        geometry_dims=dims,
+        units=reference_index.units,
+        named_affines=frames,
     )
+
+
+def _align_affine(
+    affine: np.ndarray, source_dims: tuple[str, ...], target_dims: tuple[str, ...]
+) -> np.ndarray:
+    """Align affine batch axes by name, inserting singleton axes for broadcasting.
+
+    Parameters
+    ----------
+    affine : numpy.ndarray
+        Affine array with batch axes in `source_dims` order.
+    source_dims : tuple[str, ...]
+        Existing batch dimensions.
+    target_dims : tuple[str, ...]
+        Desired batch dimension order containing all source dimensions.
+
+    Returns
+    -------
+    numpy.ndarray
+        Transposed and reshaped affine view, without evaluating world coordinates.
+    """
+    present = [d for d in target_dims if d in source_dims]
+    order = [source_dims.index(d) for d in present]
+    values = affine.transpose(*order, len(source_dims), len(source_dims) + 1)
+    shape = tuple(
+        affine.shape[source_dims.index(d)] if d in source_dims else 1
+        for d in target_dims
+    )
+    return values.reshape(*shape, *affine.shape[-2:])
+
+
+def _geometry_labels(data: xr.DataArray, dim: str) -> np.ndarray:
+    """Return dimension labels, or positions when timestamps are auxiliary arrays.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        Array carrying the dimension.
+    dim : str
+        Geometry dimension name.
+
+    Returns
+    -------
+    numpy.ndarray
+        One-dimensional labels or positions.
+    """
+    if dim in data.coords and data.coords[dim].dims == (dim,):
+        return data.coords[dim].values
+    return np.arange(data.sizes[dim])
+
+
+def _check_geometry_labels(
+    source: xr.DataArray, other: xr.DataArray, dims: set[str]
+) -> None:
+    """Reject implicit alignment of incompatible affine batch coordinates.
+
+    Parameters
+    ----------
+    source : xarray.DataArray
+        Source array.
+    other : xarray.DataArray
+        Other array being composed or compared.
+    dims : set[str]
+        Common batch dimensions to compare.
+
+    Raises
+    ------
+    ValueError
+        If common geometry dimensions have different labels or ordering.
+    """
+    for dim in dims:
+        if not np.array_equal(
+            _geometry_labels(source, dim), _geometry_labels(other, dim)
+        ):
+            raise ValueError(
+                f"Arrays must have the same grid coordinates for geometry dimension {dim!r}."
+            )
