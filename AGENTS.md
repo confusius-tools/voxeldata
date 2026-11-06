@@ -1,301 +1,215 @@
-# AGENTS.md — voxeldata
+# VoxelData Agent Guidelines
 
-This file lets a new agent resume work on the standalone **VoxelData** package.
+This file guides AI coding agents working in this repository.
 
-## Objective
+## What is VoxelData
 
-Extract ConfUSIus's VoxelData model into an independent, modality-independent
-package at:
+VoxelData is a modality-independent model for spatially referenced
+`xarray.DataArray` objects, extracted from ConfUSIus. It owns generic geometry,
+validation, extraction, and reconstruction—not probe hardware, acquisition
+policies, slice-timing correction, or modality-specific analysis.
 
-```
-/home/sdiebolt/Documents/Work/cortexlab/confusius-tools/voxeldata
-```
+API details belong in `docs/api/` and the README; planned work belongs in
+`ROADMAP.md`, not session logs.
 
-Source project: `/home/sdiebolt/Documents/Work/cortexlab/confusius-tools/confusius`.
-Downstream consumer: `/home/sdiebolt/Documents/Work/cortexlab/registration/voxreg`.
+## Data Model: VoxelData
 
-VoxelData `0.0.3` is published on PyPI and GitHub, from tag `v0.0.3` at commit
-`e1c4ca9`. It includes named geometry, extraction, N-D timestamps, and optional
-`accel`/`lazy`/`all` extras. Publish workflow run `42112747651` passed all 12 OS/Python
-combinations, lint, docs, build, and trusted publishing. ConfUSIus draft PR #569
-now depends on published `voxeldata>=0.0.3`; the temporary Git pin is removed.
+- A **VoxelData array** has dimensions `(*nonspatial_dims, k, j, i)`. Native
+  `(k, j, i)` map to world `(z, y, x)`; these names are fixed. Creation preserves
+  leading dimension order; canonicalization uses `(...extra, grid, time, k, j, i)`
+  and restores scalar-selected voxel dimensions.
+- A `VoxelToWorldIndex` owns lazily derived `z/y/x` coordinates. Ordinary indexes
+  own native voxel and nonspatial labels; do not combine their ownership or
+  materialize dense world coordinates unnecessarily. Affines act on native voxel
+  labels, including after cropping, not newly zero-based positions.
+- `geometry_dims` names ordered nonspatial affine dependencies. The shape is
+  `(*[sizes[d] for d in geometry_dims], 4, 4)`; shared geometry uses `(4, 4)` and
+  `geometry_dims=()`, even with a `grid` dimension. Omitted 3D stacks infer `grid`,
+  or legacy `pose` without `grid`; never infer dependencies by matching lengths.
+  Explicit geometry may vary in scale; inferred legacy stacks require equal scales.
+- Timestamp dependencies are independent of geometry. A named time DataArray may
+  depend on `time` plus any number of nonspatial axes; values must be numeric,
+  finite, and increasing along `time` for every series. Select timestamp
+  dependencies before shared-time indexing/analysis. Auxiliary coordinates such
+  as `slice_time` remain consumer-defined; do not infer acquisition semantics.
+- Use `create_voxeldata` to construct arrays (provide `spacing` or `voxel_to_world`),
+  `validate_voxeldata` to check them, and `ensure_voxeldata` to canonicalize and
+  validate. There is no plain-coordinate fallback for operations requiring
+  VoxelData. Construction and `.vd.set_voxel_to_world` bootstrap plain arrays.
 
-## Status
+### Geometry and extraction contracts
 
-### Extraction implementation
-
-- `src/voxeldata/extract/` now provides `extract_with_mask`, `extract_with_labels`,
-  and `unmask`, also exported at package root. No new accessor methods.
-- `src/voxeldata/masks.py` owns generic mask/label validation and spatial alignment;
-  no ConfUSIus import or acquisition-metadata defaults. Shared spatial maps require
-  physically identical geometry across any unshared dependency axes.
-- Extraction works out of the box through Xarray's grouped reductions. Extras
-  `accel` (flox) and `lazy` (Dask array) are independent and optional; `all`
-  combines them without development tools. Both backends are dev dependencies for CI.
-  The numerical label tests exercise native and flox-accelerated reductions.
-  Before the N-D timestamp extension: 331 tests on Python 3.11–3.14 (Linux),
-  93% overall coverage and 100% coverage for extraction/mask modules. Base-only installation exercises all
-  reductions and overlapping maps with neither flox nor Dask installed.
-- Extraction keeps signal data lazy; label/mask metadata are eager. Flox median
-  needs groups contained within chunks; rechunk explicitly. `unmask` is eager and
-  positional, and preserves mask geometry dependencies and named frames. Binary
-  masks may include extra feature/geometry axes, all flattened into `space`;
-  label maps are spatial-only, optionally stacked along `mask`.
-- ConfUSIus integration is pushed on `feat/voxeldata-integration`, commit `dccb6f6`,
-  in draft PR #569. Extraction is directly re-exported; acquisition-aware mask/label
-  validation, constructor defaults, and slice timing stay in ConfUSIus. Its installed
-  dependency was verified as registry VoxelData 0.0.3 (no `direct_url.json`). All
-  3,058 downstream tests pass, including napari/integration/visual regressions, with
-  98% coverage. Source/changed-boundary-test Ruff, ty, docstrings, spelling, strict
-  docs, and build pass.
-- PR #569 remains draft. No checks were reported for its new head immediately
-  after push; older successful remote runs do not verify the current commits.
-  Release `0.0.3` is complete; do not publish subsequent versions without approval.
-  ConfUSIus's four untracked benchmark files remain untouched.
-- New API docs: `docs/api/extract.md`, `docs/api/masks.md`. See `ROADMAP.md`.
-
-### Release 0.0.3 follow-up
-
-- `create_voxeldata(time=...)` now accepts a named DataArray with `time` plus any
-  number of nonspatial timestamp dependencies. These are independent of geometry.
-  Each series is numeric, finite, and strictly increasing along `time`; all axes
-  must match data sizes. Legacy unnamed 2D grid/pose timing remains supported.
-- `slice_time` and other auxiliary coordinates remain consumer-defined. VoxelData
-  does not add or interpret acquisition reference/duration metadata. ConfUSIus
-  retains its constructor defaults and explicit acquisition/slice validation.
-- Current standalone suite: 344 cases, including arbitrary-axis order, four-axis
-  timestamps, geometry independence, malformed nonfirst series, and lazy signals.
-- ConfUSIus follow-up removes the three extraction wrapper modules and directly
-  re-exports `voxeldata.extract`. `.fusi.extract` imports public `confusius.extract`
-  exports. Generic extraction no longer defaults or validates acquisition metadata.
-  Explicit ConfUSIus mask/label validators remain acquisition-aware.
-- Focused downstream proof: 238 cases, then 3,058 full-suite cases against the
-  registry release. Docs preload `voxeldata` in mkdocstrings to resolve imported
-  public exports. PyPI base/accel/lazy/all installations passed backend-isolation
-  and numerical smoke checks; all five combinations passed candidate-wheel checks.
-
-### Done
-
-- Standalone `uv` package `voxeldata` (`uv_build`, Python 3.11–3.14).
-- `src/voxeldata/`:
-  - `_dims.py` — `VOXEL_DIMS`, `WORLD_DIMS`, `GRID_DIM`, `TIME_DIM`, `CORE_DIMS`.
-  - `_coordinates.py` — `get_representative_step`, `CoordinateSpacingInfo`,
-    `get_coordinate_spacing_info`, `get_coordinate_origins` (new; returns first
-    coordinate per dim, warns and returns `0.0` when a dim has no coordinate).
-  - `geometry.py` — `VoxelToWorldIndex`/`VoxelToWorldTransform`, xarray index
-    machinery, attach/get helpers, units/spacing/origin/direction helpers, and
-    **named affine frames on the index** (`VoxelToWorldIndex.named_affines`).
-  - `affine.py` — `apply_affine`, `get_relative_affine`, `reindex_voxels`,
-    `reindex_voxels_like`, `get_bounding_box`.
-  - `create.py` — generic `create_voxeldata` (no fUSI timing metadata), now accepts
-    `affines=`.
-  - `validation.py` — `validate_voxeldata`, `ensure_voxeldata`,
-    `canonicalize_voxeldata`, `require_dataarray`, `require_positive_finite`.
-  - `accessors.py` — flat `@xr.register_dataarray_accessor("vd")` exposing
-    `VoxelDataAccessor`.
-  - `__init__.py` — public API, imports `VoxelDataAccessor` for registration.
-- Tooling/docs: `pyproject.toml`, `justfile`, `.pre-commit-config.yaml`,
-  `.gitignore`, `LICENSE` (BSD-3-Clause), `NOTICE`, `README.md`, `zensical.toml`,
-  `docs/index.md`, `docs/api/*.md` (geometry, create, validation, affine, dims,
-  accessors), `docs/stylesheets/extra.css`. Docs use the ConfUSIus visual style
-  (Space Grotesk + JetBrains Mono, custom light/dark palette, hero index, nav tabs,
-  admonition colors, rich Markdown extensions).
-- `.github/workflows/lint.yml` and `test.yml` run on main pushes, PRs, manual
-  dispatch, and reusable calls. Tests cover Python 3.11–3.14 on Linux/macOS/Windows.
-- `.github/workflows/publish.yml` publishes `v*` tags through PyPI Trusted
-  Publishing after calling lint/tests and checking tag/version agreement, docs,
-  and build. Requires the publisher setup described below.
-- Renamed the geometry dimension and public API to `grid`; arbitrary leading
-  dimension order is accepted, while canonicalization uses `grid, time`.
-- Ported modality-independent constructor, geometry, validation, bounding-box,
-  and reindexing regressions from ConfUSIus. Shared function-scoped fixtures live
-  in `tests/conftest.py`; distinguishable samples and noncommuting transforms
-  avoid vacuous selection and composition checks.
-- Fixed `reindex_voxels_like` to retain the source's named frames and compare
-  grid-dependent world coordinates, rejecting mismatched grid labels.
-- Verified: `ruff`, `ty`, `numpydoc`, `codespell`, pre-commit hooks, `pytest`
-  (154 passing on Python 3.11–3.14 on Linux; 90% statement coverage), `uv build`,
-  `zensical build --strict`. Temporary fault injection confirmed tests catch reversed
-  relative transforms and swapped world-coordinate outputs.
-
-### Remaining
-
-1. Review/merge standalone and ConfUSIus feature branches only when authorized.
-   Release 0.0.3 and its adoption in draft PR #569 are complete. Check GitHub CI for
-   ConfUSIus head `dccb6f6`; local full-suite verification is complete.
-2. **Update voxreg** to consume `voxeldata` named affines (`data.vd.to(other, via)`)
-   and drop `attrs["affines"]`.
-3. `tests/test_geometry_dims.py` covers named geometry dependencies, vectorized
-   geometry indexing, lazy signal data, native voxel labels, composition, bounds,
-   reindexing, and pickle round-trips. Run `uv run --with 'dask[array]' pytest -q`
-   to exercise the optional lazy-backend test without a new project dependency.
-   The suite has 344 cases after the N-D timestamp extension, passing on Python
-   3.11–3.14 across Linux, Windows, and macOS in the successful release workflow.
-4. Trusted Publisher is configured and release 0.0.3 is complete. Any future release
-   requires fresh authorization, a matching version tag, and successful publishing.
-5. Optionally add a `CHANGELOG.md`.
-
-## Design decisions (do not silently change)
-
-- **Flat `.vd` root accessor**, not nested `.vd.affine`. No `.voxeldata` alias.
-- Model: `(*nonspatial_dims, k, j, i)`, with arbitrary leading dimension order.
-  `time` and `grid` are special nonspatial dimensions. Creation preserves leading
-  order; validation only requires a trailing spatial block in `k, j, i` order.
-- Canonicalization and `ensure` use `(...extra_dims, grid, time, k, j, i)`, preserving
-  the relative order of extra dimensions and omitting absent `grid`/`time` axes.
-  Scalar-selected spatial axes are restored; a scalar-selected grid is not.
-- `geometry_dims` explicitly names affine batch axes, independently of data order.
-  Affine shape is `(*geometry_shape, 4, 4)`; a shared affine uses `()` even with
-  nonspatial dimensions. Omitted 3D stacks infer `grid`, or legacy `pose` when no
-  `grid` exists. Other stacks require explicit names, never size-based inference.
-- Geometry dependencies and timestamp dependencies are independent. Legacy 2D
-  time arrays use grid/probe poses; named 2D time DataArrays may use another
-  nonspatial dimension. Validation checks timestamps along the named `time` axis.
-- Native and world axis names remain fixed. Geometry-axis `.isel`/`.sel`, rename,
-  transpose, copy, canonicalization, and existing-axis concat preserve geometry.
-  Unsupported vectorized voxel indexing drops the custom index. Reindex/alignment
-  that changes geometry labels can leave Xarray's raw index stale; VoxelData
-  access/validation rejects mismatching indexed geometry labels.
-- Mutators default to `inplace=False`; `inplace=True` updates the original
-  DataArray's coords/attrs and returns it.
-- **Named affines live on `VoxelToWorldIndex.named_affines`**, never in
-  `attrs["affines"]`.
-- `attrs["affines"]` is **ignored entirely** — no read fallback, no mirror writes.
-  `apply` does not read or rewrite that attr.
-- `set_voxel_to_world` drops existing named frames by default and warns; pass
-  `named_affines=` explicitly or use `apply()` to preserve/re-express frames.
-- `apply(name)` sets the applied frame to an exact `(4, 4)` identity and
-  re-expresses every other frame as `arr @ inv(action)` (using `np.matmul`, which
-  broadcasts `2D @ 3D`).
-- `equals()` ignores named affines: index equality stays geometry-only.
-- Named affine value rules: `(4, 4)` shared frame or the complete ordered geometry
-  batch shape; finite; homogeneous last row `[0, 0, 0, 1]`. Explicit geometry may
-  vary in scale; inferred legacy stacks enforce equal scales at construction.
-- Spatial `isel` leaves named frames unchanged. Geometry `isel` indexes their batch
-  axes, including scalar reduction and named vectorized geometry selection.
-- `concat` along an existing geometry axis requires matching frame names and other
-  coordinates. Shared frames must be `allclose`; stacked frames concatenate along
-  the named axis; mixing shared and stacked frames raises.
-- `set_units`, `reindex_voxels`, `reindex_voxels_like` preserve the input's named
-  frames. `reindex_voxels_like` never copies the reference's named frames; inputs
-  with grid-dependent geometry must carry identical grid labels in the same order.
-- For ConfUSIus compatibility, `.vd.spacing` and `.vd.origin` cover **all**
-  dimensions; `.vd.direction`, `.vd.bounding_box`, `.vd.voxel_to_world`, and
-  `.vd.scalings` are spatial-only.
-- `.vd.set_voxel_to_world` is the only operation valid on a plain DataArray (no
-  existing index); all other read ops raise `ValueError`.
-
-## Public `.vd` API
-
-Properties: `index`, `voxel_dims`, `world_dims`, `geometry_dims`, `is_grid_dependent`,
-`is_axis_aligned`, `fixed_voxel_coords`, `units`, `voxel_to_world`, `origin`,
-`spacing`, `scalings`, `direction`, `bounding_box`, `affines`.
-
-Methods:
-
-```python
-set_voxel_to_world(voxel_to_world, *, units=None, geometry_dims=None, named_affines=None, inplace=False)
-set_units(units, *, inplace=False)
-apply(affine_or_name, *, geometry_dims=None, inplace=False)
-reindex_voxels(*, inplace=False)
-reindex_voxels_like(reference, *, atol=1e-6, inplace=False)
-to(other, via)
-get_affine(name)
-set_affine(name, affine, *, inplace=False)
-remove_affine(name, *, inplace=False)
-validate(**kwargs)
-canonicalize()
-ensure(**kwargs)
-```
-
-## Conventions
-
-Follow the user's global Python guidelines plus ConfUSIus conventions:
-
-- `uv` for env/deps; `just` for tasks.
-- Absolute imports only.
-- NumPy docstrings on every function/method, including private ones.
-  - Optional: `arg : type, optional` or `arg : type, default: value`.
-  - Booleans start "Whether to ...".
-  - Multiple returns: one `name : type` block each.
-  - Inline code uses single backticks.
-  - Reference private objects as plain backticks, not `[][]` links.
-- `ruff` lint/format, `ty` type check, `numpydoc` validation, `codespell`.
-- Comments end with a period; no comments that duplicate code.
-- Tests: public API only, meaningful assertions, `pytest`, seeded RNG when needed,
-  small arrays. Reuse global fixtures from `tests/conftest.py` for common geometry;
-  keep inputs specific to a constructor/error case local. Fixtures are function
-  scoped so mutation tests cannot leak state. Use distinct values for data-order
-  assertions and noncommuting matrices for composition assertions.
-
-## Publishing setup
-
-- Create the GitHub environment `pypi`; restrict deployments to `v*` release tags
-  and optionally require approval.
-- Register a PyPI Trusted Publisher (a pending publisher for the first release):
-  project `voxeldata`, owner `confusius-tools`, repository `voxeldata`, workflow
-  filename `publish.yml`, environment `pypi`. No API token is needed.
-- Set `project.version`, run `uv lock`, commit/push, then push a matching `vVERSION`
-  tag. The initial version is `0.0.1`; its matching tag is `v0.0.1`.
-- Publishing is permanent. Use a new version for subsequent releases.
-- Keep publishing instructions out of the README.
+- Keep the flat `.vd` accessor: no nested `.vd.affine` or `.voxeldata` alias.
+  Mutators default to `inplace=False`; `inplace=True` returns the updated original.
+  `.vd.origin`/`.vd.spacing` include all dimensions; direction, bounds, scalings,
+  and voxel-to-world matrices describe spatial geometry.
+- Named frames live on `VoxelToWorldIndex.named_affines`, never `attrs["affines"]`;
+  that attribute is ignored, not migrated or mirrored. Frames are finite,
+  homogeneous world-frame `(4, 4)` matrices or full geometry-shaped stacks.
+  Named frames need not share scales; index equality remains geometry-only.
+- Applying a frame re-expresses other frames as `frame @ inv(action)`, aligned by
+  dependency names, and stores an exact shared identity for the applied name.
+  `set_voxel_to_world` drops frames with a warning unless explicitly supplied;
+  unit changes and voxel reindexing preserve source frames, not reference frames.
+- Spatial selection leaves frames unchanged; geometry selection slices their batch
+  axes. Geometry-axis concatenation requires matching frame names: shared frames
+  must agree, stacked frames concatenate, and mixing shared/stacked forms raises.
+- Native `.reindex()`/alignment changing geometry labels is unsupported. Use
+  `.isel()`/`.sel()`; `.vd` validation detects indexed-label mismatches, but raw
+  world-coordinate access cannot. Do not monkey-patch Xarray to work around this.
+  `.vd.reindex_voxels()` and `.vd.reindex_voxels_like()` are distinct, supported APIs.
+  Select all geometry dependencies before a separate world-coordinate lookup.
+- Binary extraction flattens all mask dimensions, including extra feature axes.
+  Label maps are spatial-only, optionally stacked along `mask`. Shared spatial
+  maps may span unmatched geometry dependencies only when physical grids agree;
+  check native labels, affine geometry, and units, not merely array shapes.
+- Base extraction must work without flox/Dask. Extras `accel` (flox) and `lazy`
+  (Dask arrays) are independent; `all` combines runtime extras, not development
+  tools. Preserve lazy signal data during extraction; masks/labels may be eager.
+  Flox median may require explicit rechunking. `unmask` is eager and positional,
+  preserving the mask's labels, geometry dependencies, units, and named frames.
 
 ## Commands
 
+Use `uv` for dependencies/environments and `just` for common tasks.
+
 ```bash
 uv sync
-uv run ruff check --fix src tests
-uv run ruff format src tests
+just test                 # pytest with coverage.
+just pre-commit           # Ruff, ty, codespell, NumPy docstrings.
+just docs                 # Strict Zensical documentation build.
+just serve-docs
 uv run ty check
-uv run pytest -q
-uv run numpydoc lint src/voxeldata/*.py src/voxeldata/extract/*.py
-uv run codespell src tests docs README.md zensical.toml justfile pyproject.toml
-uv run zensical build --strict
 uv build
-
-just test
-just pre-commit
-just docs
 ```
 
-Run one test:
+Run one test: `uv run pytest tests/test_accessors.py::test_apply_named_frame_composition`.
+CI configuration is in `.github/workflows/`; development dependencies include both
+optional backends, so also verify base-only installs when changing dependencies.
 
-```bash
-uv run pytest tests/test_accessors.py::test_apply_named_affine_makes_it_identity
+## Code Architecture
+
+- `src/voxeldata/geometry.py`: index/transform machinery, units, named frames.
+- `affine.py`, `accessors.py`: geometry operations and the flat `.vd` interface.
+- `create.py`, `validation.py`, `masks.py`: construction and model/grid validation.
+- `extract/`: binary extraction, label reductions, and reconstruction.
+- `_dims.py`, `_coordinates.py`: shared internal dimension/coordinate helpers.
+- `__init__.py`: public exports and accessor registration; `tests/conftest.py`:
+  shared function-scoped fixtures; `docs/api/`: API documentation.
+
+### Module organization
+
+- **Cross-module shared utilities** live in `voxeldata/_<topic>.py` with public
+  function names (e.g. `voxeldata/_coordinates.py` exports
+  `get_coordinate_spacing_info`, not `_get_coordinate_spacing_info`) — the leading
+  `_` on the module conveys "internal API", names inside it are not prefixed.
+  Group by topic; don't pile everything into one file.
+- **Module-private shared helpers** live in `<module>/_utils.py` (e.g.
+  `extract/_utils.py`) — for a helper shared by 2+ files inside one module but not
+  used outside it.
+- **Never import a `_name` across module boundaries.** Need a private function from
+  another module? Either inline it, make it public in the same file, or promote it
+  to a shared internal topic module. The underscore is a real boundary, not
+  decoration.
+
+## Coding Conventions
+
+- **Imports**: absolute only (`from voxeldata import create_voxeldata`); group
+  stdlib/third-party/local; use `TYPE_CHECKING` for type-only imports.
+- **Naming**: `snake_case` functions/variables (prefer imperative verb phrases, e.g.
+  `get_source_dataarray`, not noun phrases), `PascalCase` classes, `UPPER_CASE`
+  constants, leading `_` for private.
+- **Types**: comprehensive hints incl. `numpy.typing.NDArray`; `Literal` for string
+  literals; `TypedDict` for structured dicts; `TypeAlias` for complex types; `py.typed`
+  is enabled.
+- **Errors**: specific exceptions (`ValueError`, `TypeError`, `FileNotFoundError`);
+  `warnings.warn()` for non-critical issues; validate inputs early with descriptive
+  messages.
+- **Docstrings**: NumPy format for *all* functions/methods, public and private
+  (private helpers still need full Parameters/Returns/Raises).
+  - Optional params: `arg : type, optional` (default `None`) or
+    `arg : type, default: value` — never `arg : type or None, default: None`.
+  - Fallback behavior: "If not provided, ..." — never "If `None`, ...".
+  - Booleans: start the description with "Whether to ..." — never "If `True`/`False`, ...".
+  - Multiple return values: one `name : type` block per value in `Returns` — never
+    `tuple[type1, type2]` as the documented return type.
+  - Inline code: single backticks. Full package names in the `type` line
+    (`xarray.DataArray`); no `xarray.` prefix/backticks in prose (`DataArray`).
+  - Array shapes: `(X, Y, Z) numpy.ndarray` / `(X, Y, Z) xarray.DataArray`.
+  - Cross-references: `[name][voxeldata.module.path.name]` — never Sphinx `.. [1]`.
+    Only for objects rendered in the API docs. Private objects (`_name`, or anything
+    under a `_module`/`_utils` package) are filtered out of the docs, so a `[][]` link
+    to them fails the strict docs build; reference them as plain `` `name` `` instead.
+  - Module-level constants get a triple-quoted docstring immediately after them.
+- **Comments**:
+  1. Comments should not duplicate code.
+  2. Good comments do not excuse unclear code.
+  3. If you can't write a clear comment, there may be a problem with the code.
+  4. Comments should dispel confusion, not cause it.
+  5. Explain unidiomatic code in comments.
+  6. Provide links to the original source of copied code.
+  7. Include links to external references where they will be most helpful.
+  8. Add comments when fixing bugs.
+  9. Use `TODO:` prefix for incomplete implementations.
+  10. All comments end with a period.
+  - Code adapted from another project (e.g. nilearn) needs a module-level `NOTICE`
+    file reference: "Portions of this file are derived from [Project], which is
+    licensed under the [License]. See `NOTICE` file for details."
+
+## Test Conventions
+
+- **No useless tests**: must fail if the function returns garbage — avoid tests that
+  only check shape preservation or "output differs from input".
+- **Test public API only**: don't test `_private` functions directly; they're covered
+  via the public functions that use them.
+- **No `# pragma: no cover`**, and don't force tests for branches that are unreachable
+  due to an upstream library invariant.
+- Cover: edge cases (empty inputs, boundaries), error validation (`pytest.raises`),
+  and comparisons against reference implementations (scipy, naive implementations)
+  where one exists. Reach for property-based tests only when no reference
+  implementation exists (mathematical properties: idempotence, commutativity, ...).
+- Use fixtures from `conftest.py` before creating new test data;
+  `numpy.testing.assert_allclose`/`assert_array_equal`; seeded RNGs; small arrays.
+- **VoxelData-specific coverage**: fresh function-scoped fixtures, independent
+  numerical oracles and actual sample ordering, noncommuting frame composition,
+  dependency slicing/order, native labels, frame preservation, Dask noncomputation,
+  and native/accelerated label reductions. This package has no GUI/visual tests.
+
+## Git & Changelog
+
+Commit messages follow [Commitizen](https://commitizen.github.io/cz-cli/):
+
+```
+<type>(<scope>): <short summary>
+
+<body>
 ```
 
-## File map
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`.
 
-- `src/voxeldata/geometry.py` — index + named-affine implementation:
-  - `VoxelToWorldIndex.__init__`, `with_named_affines`
-  - `_normalize_named_affines`, `_concat_named_affines`
-  - `VoxelToWorldIndex.rename`, `.isel`, `._isel_named_affines`, `.concat`
-  - `attach_voxel_to_world_index(..., named_affines=None)`
-  - `get_voxel_to_world_index`
-- `src/voxeldata/affine.py` — `apply_affine` and `get_relative_affine` use
-  `VoxelToWorldIndex.named_affines`; `_require_voxel_to_world_index` helper.
-- `src/voxeldata/create.py` — `create_voxeldata(..., affines=None)`.
-- `src/voxeldata/accessors.py` — `VoxelDataAccessor` and `_maybe_inplace`.
-- `src/voxeldata/_coordinates.py` — `get_coordinate_origins`.
-- `tests/conftest.py` — shared plain, anisotropic, oblique, irregular, time-series,
-  and grid-dependent volumes, plus noncommuting named frames.
-- `tests/test_accessors.py` — accessor contracts, named-frame validation,
-  composition, slicing, concatenation, and in-place isolation.
-- `tests/test_voxeldata.py` — core smoke tests and flexible dimension ordering.
-- `tests/test_create.py` — constructor padding, ordering, metadata, and errors.
-- `tests/test_geometry.py` — world selection, grid geometry, and alignment.
-- `tests/test_validation.py` — coordinate, spacing, time, dtype, and recovery checks.
-- `tests/test_affine.py` — independently evaluated bounds, reindexing, and frames.
-- `docs/api/accessors.md` + `zensical.toml` nav entry.
+Scopes reflect this package: `geometry`/`affine`/`create`/`accessors`,
+`extract`/`validation`, `docs`/`api`, `tests`.
 
-## Known gotchas
+VoxelData has no changelog yet. If introduced, use `docs/changelog.md` and the
+following conventions:
 
-- `create_voxeldata` requires either `spacing` or `voxel_to_world`; a bare
-  `dims=("k","j","i")` call raises.
-- A geometry dependency of size one still needs a leading affine axis. A shared
-  `(4, 4)` affine instead has `geometry_dims=()`, regardless of other dimensions.
-- `VoxelToWorldIndex.named_affines` values are always `z/y/x` world-frame `4x4`
-  matrices, independent of how many voxel dims are active.
-- `_replace_index` reattaches through `attach_voxel_to_world_index`, which rebuilds
-  world coordinates from the current data; it is used by `set_units`,
-  `set_affine`, and `remove_affine`.
+`docs/changelog.md` is grouped by version, newest first. Add entries under the
+current development version's `X.Y.Z.devN` heading (never a released version), under
+section labels in this order (only add the ones you need):
+`:boom: Breaking changes`, `:sparkles: Enhancements`, `:zap: Performance`,
+`:bug: Fixes`, `:books: Documentation`, `:wrench: Maintenance`.
+Write from the user's perspective (effect, not implementation), ending with a PR
+link: `([#123](https://github.com/confusius-tools/voxeldata/pull/123))`.
+
+## Releases
+
+- Commit, push, merge, and publish only with authorization. Agree the release
+  version explicitly. Merge and verify changes on `main` before tagging a release;
+  do not release from an unmerged feature branch.
+- Update `project.version` and `uv.lock`, then tag the tested `main` commit with
+  matching `vVERSION`. `.github/workflows/publish.yml` gates PyPI Trusted Publishing
+  on lint, the OS/Python test matrix, docs, build, and the `pypi` environment approval.
+- Never move published tags or replace published artifacts.
+
+Keep publishing setup out of the README; inspect the workflow rather than
+duplicating setup here.
