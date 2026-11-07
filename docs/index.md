@@ -52,14 +52,14 @@ A VoxelData array is an `xarray.DataArray` with:
 matrices. The required affine shape is
 `(*[data.sizes[d] for d in geometry_dims], 4, 4)`. Unrelated nonspatial dimensions
 share geometry. A single `(4, 4)` affine has `geometry_dims=()`, regardless of the
-array's nonspatial dimensions. `grid` and `pose` are ordinary nonspatial names.
+array's nonspatial dimensions.
 
 All stacks require explicit dependency names; dimension names and matching lengths
 never infer geometry axes. Identical affines and varying spatial scales are allowed.
 `time` represents temporal samples, independently of geometry dependencies.
 
 Creation preserves the input nonspatial dimension order, so both
-`(time, grid, k, j, i)` and `(grid, time, k, j, i)` are valid. Canonicalization and
+`(time, view, k, j, i)` and `(view, time, k, j, i)` are valid. Canonicalization and
 `ensure_voxeldata` normalize to `(...extra_dims, time, k, j, i)`, preserving
 the relative order of extra dimensions and omitting absent `time` dimensions.
 Scalar-selected spatial dimensions are restored, but selected nonspatial dimensions are not.

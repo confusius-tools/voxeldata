@@ -32,23 +32,23 @@ def test_numpy_input_is_not_copied(plain_volume: xr.DataArray) -> None:
 
 
 def test_constructor_reorders_data_not_just_dimension_names(
-    grid_affines: np.ndarray,
+    view_affines: np.ndarray,
 ) -> None:
     values = np.arange(4 * 2 * 3 * 2 * 2 * 3).reshape(4, 2, 3, 2, 2, 3)
     result = vd.create_voxeldata(
         values,
-        dims=("i", "component", "j", "grid", "k", "time"),
-        extra_coords={"component": ["a", "b"], "grid": [10, 20]},
+        dims=("i", "component", "j", "view", "k", "time"),
+        extra_coords={"component": ["a", "b"], "view": [10, 20]},
         dt=0.5,
-        voxel_to_world=grid_affines,
-        geometry_dims=("grid",),
+        voxel_to_world=view_affines,
+        geometry_dims=("view",),
     )
-    assert result.dims == ("component", "grid", "time", "k", "j", "i")
+    assert result.dims == ("component", "view", "time", "k", "j", "i")
     np.testing.assert_array_equal(
         result.values, np.transpose(values, (1, 3, 5, 4, 2, 0))
     )
     assert (
-        result.isel(component=1, grid=1, time=2, k=1, j=2, i=3).item()
+        result.isel(component=1, view=1, time=2, k=1, j=2, i=3).item()
         == values[3, 1, 2, 1, 1, 2]
     )
 

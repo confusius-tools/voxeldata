@@ -68,8 +68,7 @@ data = vd.create_voxeldata(
 
 `geometry_dims` names the nonspatial dimensions indexing an affine stack. For
 example, `geometry_dims=("time", "view")` requires `(ntime, nview, 4, 4)` matrices;
-other axes, such as channels, share geometry. `grid` and `pose` are ordinary
-nonspatial names with no special behavior. A single `(4, 4)` affine has no
+other axes, such as channels, share geometry. A single `(4, 4)` affine has no
 geometry dependencies, even when nonspatial dimensions are present. Timing
 coordinates are independent of these geometry dependencies. A named `time`
 DataArray may use `(time, view, channel, ...)`, with any number of nonspatial
@@ -100,7 +99,7 @@ changes those labels is also unsupported. This does not affect the explicit
 `.vd.reindex_voxels()` and `.vd.reindex_voxels_like()` geometry operations.
 
 Creation preserves the supplied nonspatial dimension order. For example, both
-`(time, grid, k, j, i)` and `(grid, time, k, j, i)` are valid.
+`(time, view, k, j, i)` and `(view, time, k, j, i)` are valid.
 `data.vd.canonicalize()` and `data.vd.ensure()` normalize to
 `(...extra_dims, time, k, j, i)`, preserving the relative order of extra
 dimensions and omitting absent `time` dimensions. Canonicalization also

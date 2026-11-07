@@ -882,7 +882,7 @@ def _validate_voxel_to_world_affine(
     Parameters
     ----------
     affine : (ndim+1, ndim+1) numpy.ndarray or (*geometry_shape, ndim+1, ndim+1) numpy.ndarray
-        Homogeneous affine, or a stack of one such affine per grid.
+        Homogeneous affine, or a stack of one such affine per geometry.
     ndim : int
         Number of spatial dimensions the affine covers.
     geometry_shape : tuple[int, ...]
@@ -1076,7 +1076,7 @@ class VoxelToWorldTransform(CoordinateTransform):
         Raises
         ------
         ValueError
-            If this transform is geometry-dependent. Grid-dependent geometry must be
+            If this transform is geometry-dependent. Geometry dependencies must be
             reduced to a single affine before reverse world-coordinate lookup
             (see `VoxelToWorldIndex.sel`).
         """
@@ -1217,13 +1217,13 @@ def _is_axis_aligned_affine(voxel_to_world: npt.ArrayLike) -> bool:
     ----------
     voxel_to_world : (N+1, N+1) numpy.ndarray or (*geometry_shape, N+1, N+1) numpy.ndarray
         Homogeneous affine mapping voxel space to world space, or a stack of one
-        such affine per grid.
+        such affine per geometry.
 
     Returns
     -------
     bool
         Whether the affine linear part is diagonal up to floating-point noise, for
-        every grid when a stack is given.
+        every geometry when a stack is given.
     """
     affine = np.asarray(voxel_to_world, dtype=np.float64)
     linear = affine[..., :-1, :-1]
@@ -1366,7 +1366,7 @@ def _fold_fixed_dims_into_affine(
     ----------
     full_affine : (N+1, N+1) numpy.ndarray or (*geometry_shape, N+1, N+1) numpy.ndarray
         Homogeneous affine covering all of `all_dims`, or a stack of one such affine
-        per grid.
+        per geometry.
     all_dims : tuple[str, ...]
         Voxel dimensions matching `full_affine`'s column order.
     active_dims : tuple[str, ...]
@@ -1649,7 +1649,7 @@ def get_voxel_to_world_spatial_dims(data: xr.DataArray) -> tuple[str, ...]:
     return tuple(dim for dim in VOXEL_DIMS if dim in data.dims)
 
 
-def require_scalar_grid_affine(
+def require_single_geometry_affine(
     data: xr.DataArray, context: str
 ) -> npt.NDArray[np.float64]:
     """Return `data`'s voxel-to-world affine, requiring a single geometry.
@@ -1721,7 +1721,7 @@ def get_voxel_to_world_index_origin(data: xr.DataArray) -> dict[str, float]:
         + [1.0],
         dtype=np.float64,
     )
-    affine = require_scalar_grid_affine(data, "Computing the voxel-to-world origin")
+    affine = require_single_geometry_affine(data, "Computing the voxel-to-world origin")
     origin = affine @ first_voxel
     return {name: np.float64(origin[i]).item() for i, name in enumerate(WORLD_DIMS)}
 
@@ -1779,7 +1779,7 @@ def get_voxel_to_world_direction_matrix(
         If `data` carries geometry with named dependencies (a stacked affine); select a
         scalar values on all geometry dimensions first.
     """
-    affine = require_scalar_grid_affine(
+    affine = require_single_geometry_affine(
         data, "Computing the voxel-to-world direction matrix"
     )
     direction = get_affine_direction_matrix(affine)
@@ -1804,7 +1804,7 @@ def get_affine_axis_scalings(
     ----------
     voxel_to_world : (N+1, N+1) numpy.ndarray or (*geometry_shape, N+1, N+1) numpy.ndarray
         Homogeneous affine mapping voxel space to world space, or a stack of one
-        such affine per grid. For a stack, scalings must agree across
+        such affine per geometry. For a stack, scalings must agree across
         geometries; otherwise select a geometry before using this scalar helper.
     voxel_dims : tuple[str, ...]
         Voxel-space dimension names in affine column order.

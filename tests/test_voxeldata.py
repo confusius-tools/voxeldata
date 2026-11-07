@@ -60,14 +60,14 @@ def test_create_oblique_geometry_sel_world() -> None:
     assert selected.item() == 45
 
 
-def test_grid_dependent_geometry(sample_voxeldata_grids: xr.DataArray) -> None:
-    data = sample_voxeldata_grids
+def test_view_dependent_geometry(sample_voxeldata_views: xr.DataArray) -> None:
+    data = sample_voxeldata_views
 
     index = vd.get_voxel_to_world_index(data)
     assert index is not None
     assert index.geometry_dims
     np.testing.assert_allclose(data.coords["z"].values[:, 0, 0, 0], [10.0, 110.0])
-    selected = data.isel(grid=1)
+    selected = data.isel(view=1)
     selected_index = vd.get_voxel_to_world_index(selected)
     assert selected_index is not None
     assert not selected_index.geometry_dims
@@ -186,31 +186,31 @@ def test_time_coordinates_generated_from_dt() -> None:
     assert data.coords["time"].attrs["units"] == "s"
 
 
-def test_per_grid_time_coordinate() -> None:
+def test_per_view_time_coordinate() -> None:
     data = vd.create_voxeldata(
         np.zeros((3, 2, 2, 2, 2)),
-        dims=("time", "grid", "k", "j", "i"),
-        extra_coords={"grid": [0, 1]},
-        time=xr.DataArray([[0, 10], [1, 11], [2, 12]], dims=("time", "grid")),
+        dims=("time", "view", "k", "j", "i"),
+        extra_coords={"view": [0, 1]},
+        time=xr.DataArray([[0, 10], [1, 11], [2, 12]], dims=("time", "view")),
         voxel_to_world=np.stack([np.eye(4), np.eye(4)]),
-        geometry_dims=("grid",),
+        geometry_dims=("view",),
     )
-    assert data.coords["time"].dims == ("time", "grid")
+    assert data.coords["time"].dims == ("time", "view")
     np.testing.assert_allclose(data.coords["time"].values[:, 1], [10.0, 11.0, 12.0])
 
 
 @pytest.mark.parametrize(
     "leading_dims",
     [
-        ("time", "grid"),
-        ("grid", "time"),
-        ("grid", "component", "time"),
-        ("echo", "time", "component", "grid"),
+        ("time", "view"),
+        ("view", "time"),
+        ("view", "component", "time"),
+        ("echo", "time", "component", "view"),
     ],
 )
-def test_nonspatial_order_and_grid_geometry(leading_dims: tuple[str, ...]) -> None:
+def test_nonspatial_order_and_view_geometry(leading_dims: tuple[str, ...]) -> None:
     dims = (*leading_dims, "k", "j", "i")
-    sizes = {"grid": 2, "time": 3, "component": 2, "echo": 2, "k": 2, "j": 3, "i": 4}
+    sizes = {"view": 2, "time": 3, "component": 2, "echo": 2, "k": 2, "j": 3, "i": 4}
     values = np.arange(np.prod([sizes[dim] for dim in dims])).reshape(
         tuple(sizes[dim] for dim in dims)
     )
@@ -221,19 +221,19 @@ def test_nonspatial_order_and_grid_geometry(leading_dims: tuple[str, ...]) -> No
     data = vd.create_voxeldata(
         values,
         dims=dims,
-        time=xr.DataArray([[0, 10], [0.5, 10.5], [1, 11]], dims=("time", "grid")),
+        time=xr.DataArray([[0, 10], [0.5, 10.5], [1, 11]], dims=("time", "view")),
         voxel_to_world=affines,
-        geometry_dims=("grid",),
+        geometry_dims=("view",),
         affines={"reference": frames},
     )
 
     assert data.dims == dims
     np.testing.assert_array_equal(data.values, values)
     data.vd.validate()
-    assert data.coords["time"].dims == ("time", "grid")
+    assert data.coords["time"].dims == ("time", "view")
     np.testing.assert_allclose(data.coords["time"].values[:, 1], [10.0, 10.5, 11.0])
-    np.testing.assert_allclose(data.coords["z"].isel(grid=1, k=1, j=0, i=0), 11.0)
-    selected = data.isel(grid=1)
+    np.testing.assert_allclose(data.coords["z"].isel(view=1, k=1, j=0, i=0), 11.0)
+    selected = data.isel(view=1)
     assert not selected.vd.geometry_dims
     np.testing.assert_allclose(selected.vd.voxel_to_world, affines[1])
     np.testing.assert_allclose(selected.vd.get_affine("reference"), frames[1])
@@ -260,15 +260,15 @@ def test_nonspatial_order_and_grid_geometry(leading_dims: tuple[str, ...]) -> No
     restored = data.isel(j=1).vd.ensure()
     assert restored.dims == expected_dims
     assert restored.sizes["j"] == 1
-    np.testing.assert_allclose(restored.coords["y"].isel(grid=1, k=0, j=0, i=0), 21.0)
+    np.testing.assert_allclose(restored.coords["y"].isel(view=1, k=0, j=0, i=0), 21.0)
 
-    single_grid = selected.vd.ensure()
-    assert "grid" not in single_grid.dims
-    assert not single_grid.vd.geometry_dims
-    np.testing.assert_allclose(single_grid.vd.voxel_to_world, affines[1])
+    single_view = selected.vd.ensure()
+    assert "view" not in single_view.dims
+    assert not single_view.vd.geometry_dims
+    np.testing.assert_allclose(single_view.vd.voxel_to_world, affines[1])
 
     combined = xr.concat(
-        [data.isel(grid=slice(0, 1)), data.isel(grid=slice(1, 2))], dim="grid"
+        [data.isel(view=slice(0, 1)), data.isel(view=slice(1, 2))], dim="view"
     )
     assert combined.dims == dims
     np.testing.assert_array_equal(combined.values, values)
@@ -276,27 +276,27 @@ def test_nonspatial_order_and_grid_geometry(leading_dims: tuple[str, ...]) -> No
     np.testing.assert_allclose(combined.vd.get_affine("reference"), frames)
 
 
-@pytest.mark.parametrize("ngrid", [1, 2])
-def test_grid_requires_matching_affine_stack(ngrid: int) -> None:
-    values = np.zeros((ngrid, 2, 2, 2))
+@pytest.mark.parametrize("nview", [1, 2])
+def test_view_requires_matching_affine_stack(nview: int) -> None:
+    values = np.zeros((nview, 2, 2, 2))
     shared = vd.create_voxeldata(
-        values, dims=("grid", "k", "j", "i"), voxel_to_world=np.eye(4)
+        values, dims=("view", "k", "j", "i"), voxel_to_world=np.eye(4)
     )
     assert shared.vd.geometry_dims == ()
     assert shared.z.dims == ("k", "j", "i")
     with pytest.raises(ValueError, match="stack length"):
         vd.create_voxeldata(
             values,
-            dims=("grid", "k", "j", "i"),
-            voxel_to_world=np.stack([np.eye(4)] * (ngrid + 1)),
-            geometry_dims=("grid",),
+            dims=("view", "k", "j", "i"),
+            voxel_to_world=np.stack([np.eye(4)] * (nview + 1)),
+            geometry_dims=("view",),
         )
     data = vd.create_voxeldata(
         values,
-        dims=("grid", "k", "j", "i"),
-        voxel_to_world=np.stack([np.eye(4)] * ngrid),
-        geometry_dims=("grid",),
+        dims=("view", "k", "j", "i"),
+        voxel_to_world=np.stack([np.eye(4)] * nview),
+        geometry_dims=("view",),
     )
     assert data.vd.geometry_dims
-    assert data.vd.voxel_to_world.shape == (ngrid, 4, 4)
+    assert data.vd.voxel_to_world.shape == (nview, 4, 4)
     data.vd.validate()

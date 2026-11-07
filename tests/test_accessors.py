@@ -107,12 +107,12 @@ def test_apply_named_frame_composition(
         np.testing.assert_array_equal(data.vd.get_affine("lab"), named_affines["lab"])
 
 
-def test_apply_per_grid_frame_broadcasts_shared_frames(
-    sample_voxeldata_grids: xr.DataArray, named_affines: dict[str, np.ndarray]
+def test_apply_per_view_frame_broadcasts_shared_frames(
+    sample_voxeldata_views: xr.DataArray, named_affines: dict[str, np.ndarray]
 ) -> None:
     frames = np.stack([named_affines["lab"], named_affines["lab"].copy()])
     frames[1, :3, 3] += [10, 20, 30]
-    data = sample_voxeldata_grids.vd.set_affine("lab", frames).vd.set_affine(
+    data = sample_voxeldata_views.vd.set_affine("lab", frames).vd.set_affine(
         "atlas", named_affines["atlas"]
     )
     result = data.vd.apply("lab")
@@ -124,7 +124,7 @@ def test_apply_per_grid_frame_broadcasts_shared_frames(
             [[0, 2, 0, -41], [-3, 0, 0, 62], [0, 0, 4, -145], [0, 0, 0, 1]],
         ],
     )
-    point = result.isel(grid=1, k=0, j=0, i=0)
+    point = result.isel(view=1, k=0, j=0, i=0)
     np.testing.assert_allclose(
         [point.coords[d].item() for d in ("z", "y", "x")], [15, 137, 76]
     )
@@ -166,57 +166,57 @@ def test_attrs_affines_are_ignored_and_untouched(
     sample_voxeldata_3d: xr.DataArray,
 ) -> None:
     data = sample_voxeldata_3d
-    data.attrs["affines"] = {"legacy": np.eye(4)}
-    with pytest.raises(KeyError, match="legacy"):
-        data.vd.apply("legacy")
+    data.attrs["affines"] = {"unindexed": np.eye(4)}
+    with pytest.raises(KeyError, match="unindexed"):
+        data.vd.apply("unindexed")
     result = data.vd.apply(np.diag([2.0, 2.0, 2.0, 1.0]))
     assert result.vd.affines == {}
-    np.testing.assert_array_equal(result.attrs["affines"]["legacy"], np.eye(4))
+    np.testing.assert_array_equal(result.attrs["affines"]["unindexed"], np.eye(4))
 
 
 @pytest.mark.parametrize(
     "indexer, positions",
     [(0, [0]), (slice(1, 2), [1]), ([1, 0], [1, 0]), (np.array([1]), [1])],
 )
-def test_grid_selection_slices_named_affines(
-    sample_voxeldata_grids: xr.DataArray,
-    grid_affines: np.ndarray,
+def test_view_selection_slices_named_affines(
+    sample_voxeldata_views: xr.DataArray,
+    view_affines: np.ndarray,
     indexer: object,
     positions: list[int],
 ) -> None:
-    data = sample_voxeldata_grids.vd.set_affine("lab", grid_affines).vd.set_affine(
+    data = sample_voxeldata_views.vd.set_affine("lab", view_affines).vd.set_affine(
         "shared", np.eye(4)
     )
-    selected = data.isel(grid=indexer)
+    selected = data.isel(view=indexer)
     expected = (
-        grid_affines[positions[0]]
+        view_affines[positions[0]]
         if isinstance(indexer, int)
-        else grid_affines[positions]
+        else view_affines[positions]
     )
     assert bool(selected.vd.geometry_dims) is not isinstance(indexer, int)
     np.testing.assert_array_equal(selected.vd.get_affine("lab"), expected)
     np.testing.assert_array_equal(selected.vd.get_affine("shared"), np.eye(4))
-    np.testing.assert_array_equal(data.vd.get_affine("lab"), grid_affines)
+    np.testing.assert_array_equal(data.vd.get_affine("lab"), view_affines)
 
 
 def test_spatial_selection_preserves_named_affines(
-    sample_voxeldata_grids: xr.DataArray, grid_affines: np.ndarray
+    sample_voxeldata_views: xr.DataArray, view_affines: np.ndarray
 ) -> None:
-    data = sample_voxeldata_grids.vd.set_affine("lab", grid_affines)
-    np.testing.assert_array_equal(data.isel(j=1).vd.get_affine("lab"), grid_affines)
+    data = sample_voxeldata_views.vd.set_affine("lab", view_affines)
+    np.testing.assert_array_equal(data.isel(j=1).vd.get_affine("lab"), view_affines)
 
 
 def test_concat_merges_named_affines(
-    sample_voxeldata_grids: xr.DataArray, grid_affines: np.ndarray
+    sample_voxeldata_views: xr.DataArray, view_affines: np.ndarray
 ) -> None:
-    data = sample_voxeldata_grids.vd.set_affine("lab", grid_affines).vd.set_affine(
+    data = sample_voxeldata_views.vd.set_affine("lab", view_affines).vd.set_affine(
         "shared", np.eye(4)
     )
     combined = xr.concat(
-        [data.isel(grid=slice(1, 2)), data.isel(grid=slice(0, 1))], dim="grid"
+        [data.isel(view=slice(1, 2)), data.isel(view=slice(0, 1))], dim="view"
     )
-    np.testing.assert_array_equal(combined.coords["grid"], [20, 10])
-    np.testing.assert_array_equal(combined.vd.get_affine("lab"), grid_affines[[1, 0]])
+    np.testing.assert_array_equal(combined.coords["view"], [20, 10])
+    np.testing.assert_array_equal(combined.vd.get_affine("lab"), view_affines[[1, 0]])
     np.testing.assert_array_equal(combined.vd.get_affine("shared"), np.eye(4))
     np.testing.assert_array_equal(combined.values[:, 0, 0, 0], [24, 0])
 
@@ -230,16 +230,16 @@ def test_concat_merges_named_affines(
     ],
 )
 def test_concat_rejects_incompatible_frames(
-    sample_voxeldata_grids: xr.DataArray, case: str, message: str
+    sample_voxeldata_views: xr.DataArray, case: str, message: str
 ) -> None:
-    left = sample_voxeldata_grids.isel(grid=slice(0, 1)).vd.set_affine("lab", np.eye(4))
-    right = sample_voxeldata_grids.isel(grid=slice(1, 2))
+    left = sample_voxeldata_views.isel(view=slice(0, 1)).vd.set_affine("lab", np.eye(4))
+    right = sample_voxeldata_views.isel(view=slice(1, 2))
     if case == "shared":
         right = right.vd.set_affine("lab", np.diag([2.0, 2.0, 2.0, 1.0]))
     elif case == "mixed":
         right = right.vd.set_affine("lab", np.eye(4)[None])
     with pytest.raises(ValueError, match=message):
-        xr.concat([left, right], dim="grid")
+        xr.concat([left, right], dim="view")
 
 
 @pytest.mark.parametrize(
@@ -260,12 +260,12 @@ def test_named_affine_validation(
 
 
 def test_named_frames_may_have_different_scales_per_grid(
-    sample_voxeldata_grids: xr.DataArray,
+    sample_voxeldata_views: xr.DataArray,
 ) -> None:
     frames = np.stack([np.eye(4), np.diag([2.0, 3.0, 4.0, 1.0])])
-    data = sample_voxeldata_grids.vd.set_affine("lab", frames)
+    data = sample_voxeldata_views.vd.set_affine("lab", frames)
     np.testing.assert_array_equal(data.vd.get_affine("lab"), frames)
-    assert data.vd.index.equals(sample_voxeldata_grids.vd.index)
+    assert data.vd.index.equals(sample_voxeldata_views.vd.index)
 
 
 @pytest.mark.parametrize("inplace", [False, True])

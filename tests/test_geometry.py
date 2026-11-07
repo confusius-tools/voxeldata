@@ -140,39 +140,39 @@ def test_decoupled_row_can_select_without_other_world_labels(
 
 
 @pytest.mark.parametrize("combined", [False, True])
-def test_grid_world_lookup_requires_prior_scalar_selection(
-    sample_voxeldata_grids: xr.DataArray, combined: bool
+def test_view_world_lookup_requires_prior_scalar_selection(
+    sample_voxeldata_views: xr.DataArray, combined: bool
 ) -> None:
-    labels = {"grid": 20, "z": 110.0} if combined else {"z": 110.0}
-    with pytest.raises(ValueError, match="requires reducing `grid` to a scalar"):
-        sample_voxeldata_grids.sel(labels)
-    point = sample_voxeldata_grids.sel(grid=20).sel(z=111, y=4, x=44)
+    labels = {"view": 20, "z": 110.0} if combined else {"z": 110.0}
+    with pytest.raises(ValueError, match="requires reducing `view` to a scalar"):
+        sample_voxeldata_views.sel(labels)
+    point = sample_voxeldata_views.sel(view=20).sel(z=111, y=4, x=44)
     assert point.item() == 47
 
 
-def test_rotated_grid_coordinates(
+def test_rotated_view_coordinates(
     plain_volume: xr.DataArray, voxel_affine: np.ndarray
 ) -> None:
     rotated = np.array([[0, -2, 0, 100], [1, 0, 0, 200], [0, 0, 3, 300], [0, 0, 0, 1]])
-    data = plain_volume.expand_dims(grid=[10, 20])
+    data = plain_volume.expand_dims(view=[10, 20])
     result = vd.attach_voxel_to_world_index(
-        data, np.stack([voxel_affine, rotated]), geometry_dims=("grid",)
+        data, np.stack([voxel_affine, rotated]), geometry_dims=("view",)
     )
-    point = result.isel(grid=1, k=1, j=2, i=3)
+    point = result.isel(view=1, k=1, j=2, i=3)
     np.testing.assert_allclose(
         [point.coords[d].item() for d in ("z", "y", "x")], [96, 201, 309]
     )
     assert not result.vd.is_axis_aligned
-    assert result.vd.spacing == {"grid": 10, "k": 1, "j": 2, "i": 3}
+    assert result.vd.spacing == {"view": 10, "k": 1, "j": 2, "i": 3}
 
 
 @pytest.mark.parametrize("property_name", ["origin", "direction"])
-def test_grid_scalar_geometry_requirements(
-    sample_voxeldata_grids: xr.DataArray, property_name: str
+def test_view_scalar_geometry_requirements(
+    sample_voxeldata_views: xr.DataArray, property_name: str
 ) -> None:
     with pytest.raises(ValueError, match="requires a single geometry"):
-        getattr(sample_voxeldata_grids.vd, property_name)
-    assert sample_voxeldata_grids.isel(grid=1).vd.origin == {"z": 110, "y": 0, "x": 35}
+        getattr(sample_voxeldata_views.vd, property_name)
+    assert sample_voxeldata_views.isel(view=1).vd.origin == {"z": 110, "y": 0, "x": 35}
 
 
 @pytest.mark.parametrize(
@@ -182,20 +182,20 @@ def test_grid_scalar_geometry_requirements(
         ("last_row", "homogeneous"),
     ],
 )
-def test_grid_affine_validation(
-    plain_volume: xr.DataArray, grid_affines: np.ndarray, failure: str, message: str
+def test_view_affine_validation(
+    plain_volume: xr.DataArray, view_affines: np.ndarray, failure: str, message: str
 ) -> None:
     if failure == "nonfinite":
-        grid_affines[0, 0, 0] = np.nan
+        view_affines[0, 0, 0] = np.nan
     elif failure == "last_row":
-        grid_affines[0, -1, -1] = 2
+        view_affines[0, -1, -1] = 2
     else:
-        grid_affines[1, 0, 0] = 2
+        view_affines[1, 0, 0] = 2
     with pytest.raises(ValueError, match=message):
         vd.attach_voxel_to_world_index(
-            plain_volume.expand_dims(grid=[10, 20]),
-            grid_affines,
-            geometry_dims=("grid",),
+            plain_volume.expand_dims(view=[10, 20]),
+            view_affines,
+            geometry_dims=("view",),
         )
 
 

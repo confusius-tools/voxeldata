@@ -26,7 +26,7 @@ API details belong in `docs/api/` and the README; planned work belongs in
   `(*[sizes[d] for d in geometry_dims], 4, 4)`; shared geometry uses `(4, 4)` and
   `geometry_dims=()`, regardless of nonspatial dimension names. Stacked affines
   require explicit dependencies; never infer them from names or matching lengths.
-  Geometry may vary in scale. `grid` and `pose` are ordinary nonspatial names.
+  Geometry may vary in scale.
 - Timestamp dependencies are independent of geometry. A named time DataArray may
   depend on `time` plus any number of nonspatial axes; values must be numeric,
   finite, and increasing along `time` for every series. Select timestamp

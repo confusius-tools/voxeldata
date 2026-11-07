@@ -139,7 +139,7 @@ def test_dimension_names_must_be_strings(plain_volume: xr.DataArray) -> None:
         vd.validate_voxeldata(xr.DataArray(plain_volume.values, dims=(1, "j", "i")))
 
 
-@pytest.mark.parametrize("coord_dims", [("time", "grid"), ("grid", "time")])
+@pytest.mark.parametrize("coord_dims", [("time", "view"), ("view", "time")])
 @pytest.mark.parametrize(
     "failure, message",
     [
@@ -148,13 +148,13 @@ def test_dimension_names_must_be_strings(plain_volume: xr.DataArray) -> None:
         ("descending", "monotonic-increasing"),
     ],
 )
-def test_per_grid_time_validation_uses_named_time_axis(
-    sample_voxeldata_grid_time: xr.DataArray,
+def test_per_view_time_validation_uses_named_time_axis(
+    sample_voxeldata_view_time: xr.DataArray,
     coord_dims: tuple[str, str],
     failure: str,
     message: str,
 ) -> None:
-    data = sample_voxeldata_grid_time
+    data = sample_voxeldata_view_time
     values = np.array([[0.0, 10.0], [0.5, 10.5], [1.0, 11.0]])
     if failure == "string":
         values = values.astype(str)
@@ -162,16 +162,16 @@ def test_per_grid_time_validation_uses_named_time_axis(
         values[1, 1] = np.nan
     else:
         values[:, 1] = values[::-1, 1]
-    coord = xr.DataArray(values, dims=("time", "grid")).transpose(*coord_dims)
+    coord = xr.DataArray(values, dims=("time", "view")).transpose(*coord_dims)
     with pytest.raises(ValueError, match=message):
         vd.validate_voxeldata(data.assign_coords(time=coord))
 
 
-@pytest.mark.parametrize("coord_dims", [("time", "grid"), ("grid", "time")])
-def test_singleton_per_grid_time_is_valid(
-    sample_voxeldata_grid_time: xr.DataArray, coord_dims: tuple[str, str]
+@pytest.mark.parametrize("coord_dims", [("time", "view"), ("view", "time")])
+def test_singleton_per_view_time_is_valid(
+    sample_voxeldata_view_time: xr.DataArray, coord_dims: tuple[str, str]
 ) -> None:
-    data = sample_voxeldata_grid_time.isel(time=[0])
+    data = sample_voxeldata_view_time.isel(time=[0])
     vd.validate_voxeldata(
         data.assign_coords(time=data.coords["time"].transpose(*coord_dims))
     )

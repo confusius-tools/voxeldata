@@ -100,7 +100,7 @@ def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
     )
     corners_h = np.hstack([corners, np.ones((len(corners), 1))]).T
 
-    # (*geometry_shape, 4, 4) @ (4, 8) broadcasts to one corner set per grid.
+    # (*geometry_shape, 4, 4) @ (4, 8) broadcasts to one corner set per geometry.
     world_corners = (affine @ corners_h)[..., :-1, :]
     bounds = np.stack([world_corners.min(axis=-1), world_corners.max(axis=-1)], axis=-2)
 
@@ -207,7 +207,7 @@ def apply_affine(
 
     The transform is composed into the DataArray's `VoxelToWorldIndex`, derived
     world coordinates are regenerated, and named affine frames on that index are
-    re-expressed against the new world frame. Legacy `attrs["affines"]` entries are
+    re-expressed against the new world frame. `attrs["affines"]` entries are
     ignored entirely.
 
     Parameters
@@ -349,11 +349,9 @@ def reindex_voxels(da: xr.DataArray) -> xr.DataArray:
     -------
     xarray.DataArray
         `da` with voxel coordinates rebased to `0, 1, ..., dim - 1` and an updated
-        `voxel_to_world` affine. World coordinates are unchanged. For geometry-dependent
-        geometry, `voxel_to_world` stays a geometry-dependent stack: each grid keeps its own
-        origin and direction (spacing is shared, per the equal-scale invariant), so
-        rebasing is performed for every geometry without evaluating world coordinates.
-        Explicit geometry may have varying spatial scalings.
+        `voxel_to_world` affine. World coordinates are unchanged. Each geometry
+        retains its origin, direction, and spatial scalings. Rebasing is performed
+        for every geometry without evaluating world coordinates.
 
     Raises
     ------
@@ -399,8 +397,8 @@ def reindex_voxels_like(
     built with dense labels). This verifies the two occupy the same world grid, then
     relabels `data`'s voxel coordinates and affine to match `reference`'s exactly, so
     the two become directly alignable (`.sel()`, arithmetic, `xarray.align`, ...) by
-    voxel label as well as by world position. Grid-dependent inputs must have
-    matching grid labels in the same order. Named frames remain those of `data`,
+    voxel label as well as by world position. Inputs with geometry dependencies must have
+    matching geometry labels in the same order. Named frames remain those of `data`,
     since relabeling voxel coordinates does not change its world frame.
 
     Parameters
@@ -441,7 +439,7 @@ def reindex_voxels_like(
         )
     if set(source_index.geometry_dims) != set(reference_index.geometry_dims):
         raise ValueError(
-            "data and reference must have the same grid coordinates and geometry dimensions."
+            "data and reference must have the same geometry coordinates and geometry dimensions."
         )
     _check_geometry_labels(data, reference, set(source_index.geometry_dims))
     if source_index.units != reference_index.units:
@@ -546,5 +544,5 @@ def _check_geometry_labels(
             _geometry_labels(source, dim), _geometry_labels(other, dim)
         ):
             raise ValueError(
-                f"Arrays must have the same grid coordinates for geometry dimension {dim!r}."
+                f"Arrays must have the same geometry coordinates for geometry dimension {dim!r}."
             )

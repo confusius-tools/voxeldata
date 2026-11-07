@@ -20,7 +20,7 @@ def extract_with_mask(data: xr.DataArray, mask: xr.DataArray) -> xr.DataArray:
     mask : xarray.DataArray
         VoxelData mask on the same physical grid. Must be boolean or binary
         numeric: zero is background and one distinct nonzero value selects samples.
-        Extra mask axes, such as grid or channel, are flattened along with native
+        Extra mask axes, such as view or channel, are flattened along with native
         voxel axes. A shared mask can span geometry dependencies only if their
         affine matrices agree; otherwise include or select those dependencies.
 

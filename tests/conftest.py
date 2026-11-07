@@ -161,7 +161,7 @@ def sample_voxeldata_3d_oblique(
 
 
 @pytest.fixture
-def grid_affines(voxel_affine: np.ndarray) -> np.ndarray:
+def view_affines(voxel_affine: np.ndarray) -> np.ndarray:
     """Return two anisotropic grids separated by a translation.
 
     Parameters
@@ -180,8 +180,8 @@ def grid_affines(voxel_affine: np.ndarray) -> np.ndarray:
 
 
 @pytest.fixture
-def sample_voxeldata_grids(
-    plain_volume: xr.DataArray, grid_affines: np.ndarray
+def sample_voxeldata_views(
+    plain_volume: xr.DataArray, view_affines: np.ndarray
 ) -> xr.DataArray:
     """Return two labelled grids with separate geometry and sample values.
 
@@ -189,7 +189,7 @@ def sample_voxeldata_grids(
     ----------
     plain_volume : xarray.DataArray
         Spatial samples and voxel labels.
-    grid_affines : numpy.ndarray
+    view_affines : numpy.ndarray
         One voxel-to-world matrix per grid.
 
     Returns
@@ -197,29 +197,29 @@ def sample_voxeldata_grids(
     xarray.DataArray
         Two grids labelled `10` and `20`, with values from zero to forty-seven.
     """
-    data = plain_volume.expand_dims(grid=[10, 20]).copy(deep=True)
+    data = plain_volume.expand_dims(view=[10, 20]).copy(deep=True)
     data.data = np.arange(48, dtype=float).reshape(2, 2, 3, 4)
-    return vd.attach_voxel_to_world_index(data, grid_affines, geometry_dims=("grid",))
+    return vd.attach_voxel_to_world_index(data, view_affines, geometry_dims=("view",))
 
 
 @pytest.fixture
-def sample_voxeldata_grid_time(sample_voxeldata_grids: xr.DataArray) -> xr.DataArray:
+def sample_voxeldata_view_time(sample_voxeldata_views: xr.DataArray) -> xr.DataArray:
     """Return grids with independent, regularly sampled timestamps.
 
     Parameters
     ----------
-    sample_voxeldata_grids : xarray.DataArray
+    sample_voxeldata_views : xarray.DataArray
         Spatial grid stack.
 
     Returns
     -------
     xarray.DataArray
-        `(time, grid, k, j, i)` samples with a `(time, grid)` time coordinate.
+        `(time, view, k, j, i)` samples with a `(time, view)` time coordinate.
     """
-    result = sample_voxeldata_grids.expand_dims(time=3).copy(deep=True)
+    result = sample_voxeldata_views.expand_dims(time=3).copy(deep=True)
     result.data = np.arange(144, dtype=float).reshape(3, 2, 2, 3, 4)
     return result.assign_coords(
-        time=(("time", "grid"), [[0.0, 10.0], [0.5, 10.5], [1.0, 11.0]], {"units": "s"})
+        time=(("time", "view"), [[0.0, 10.0], [0.5, 10.5], [1.0, 11.0]], {"units": "s"})
     )
 
 

@@ -61,7 +61,7 @@ restored = vd.unmask(signals, mask)         # (time, k, j, i).
   integer ids. Stacked masks use their `mask` coordinate to identify regions;
   overlapping layers and repeated or negative nonzero ids are supported.
 - Binary masks flatten all their dimensions into `space`, including any extra
-  feature/geometry axes such as channel or grid. Other signal dimensions are
+  feature/geometry axes such as channel or view. Other signal dimensions are
   retained. Label maps are spatial-only, optionally with a leading `mask` axis.
   The model's existing canonical leading-axis ordering is applied first.
 - A shared spatial mask/map may span geometry dependencies only when the affine
