@@ -16,7 +16,7 @@ API details belong in `docs/api/` and the README; planned work belongs in
 
 - A **VoxelData array** has dimensions `(*nonspatial_dims, k, j, i)`. Native
   `(k, j, i)` map to world `(z, y, x)`; these names are fixed. Creation preserves
-  leading dimension order; canonicalization uses `(...extra, grid, time, k, j, i)`
+  leading dimension order; canonicalization uses `(...extra, time, k, j, i)`
   and restores scalar-selected voxel dimensions.
 - A `VoxelToWorldIndex` owns lazily derived `z/y/x` coordinates. Ordinary indexes
   own native voxel and nonspatial labels; do not combine their ownership or
@@ -24,9 +24,9 @@ API details belong in `docs/api/` and the README; planned work belongs in
   labels, including after cropping, not newly zero-based positions.
 - `geometry_dims` names ordered nonspatial affine dependencies. The shape is
   `(*[sizes[d] for d in geometry_dims], 4, 4)`; shared geometry uses `(4, 4)` and
-  `geometry_dims=()`, even with a `grid` dimension. Omitted 3D stacks infer `grid`,
-  or legacy `pose` without `grid`; never infer dependencies by matching lengths.
-  Explicit geometry may vary in scale; inferred legacy stacks require equal scales.
+  `geometry_dims=()`, regardless of nonspatial dimension names. Stacked affines
+  require explicit dependencies; never infer them from names or matching lengths.
+  Geometry may vary in scale. `grid` and `pose` are ordinary nonspatial names.
 - Timestamp dependencies are independent of geometry. A named time DataArray may
   depend on `time` plus any number of nonspatial axes; values must be numeric,
   finite, and increasing along `time` for every series. Select timestamp

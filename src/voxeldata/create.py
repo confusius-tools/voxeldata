@@ -9,7 +9,7 @@ import numpy as np
 import numpy.typing as npt
 import xarray as xr
 
-from voxeldata._dims import CORE_DIMS, GRID_DIM, TIME_DIM, VOXEL_DIMS, WORLD_DIMS
+from voxeldata._dims import CORE_DIMS, TIME_DIM, VOXEL_DIMS, WORLD_DIMS
 from voxeldata.geometry import attach_voxel_to_world_index
 from voxeldata.validation import require_positive_finite, validate_voxeldata
 
@@ -263,13 +263,11 @@ def create_voxeldata(
     dims: Sequence[str],
     extra_coords: Mapping[str, npt.ArrayLike | xr.DataArray] | None = None,
     time: npt.ArrayLike | xr.DataArray | None = None,
-    grid: npt.ArrayLike | xr.DataArray | None = None,
-    pose: npt.ArrayLike | xr.DataArray | None = None,
     k: npt.ArrayLike | xr.DataArray | None = None,
     j: npt.ArrayLike | xr.DataArray | None = None,
     i: npt.ArrayLike | xr.DataArray | None = None,
     dt: float | None = None,
-    t0: float | npt.ArrayLike = 0.0,
+    t0: float = 0.0,
     spacing: Sequence[float] | None = None,
     origin: Sequence[float] | None = None,
     direction: npt.ArrayLike | None = None,
@@ -289,8 +287,8 @@ def create_voxeldata(
         including Dask arrays.
     dims : sequence[str]
         Input dimension names. Native voxel dimensions are `i`/`j`/`k` (always
-        present in the result, added as singleton dimensions when missing). `grid`
-        and `time` are optional. Any other extra dimensions are allowed. The returned
+        present in the result, added as singleton dimensions when missing). `time`
+        is optional. Any other extra dimensions are allowed. The returned
         DataArray has dimensions `(*nonspatial_dims, k, j, i)`, preserving the input
         order of all nonspatial dimensions.
     extra_coords : mapping[str, numpy.typing.ArrayLike or xarray.DataArray], optional
@@ -299,19 +297,14 @@ def create_voxeldata(
         Coordinates for the `time` dimension. A multidimensional DataArray names
         `time` and any additional nonspatial timestamp dependencies, independently
         of `geometry_dims`. Values must increase along `time` for each series.
-        A 2D NumPy array retains legacy per-`grid` or per-`pose` interpretation.
-    grid : numpy.typing.ArrayLike or xarray.DataArray, optional
-        Integer coordinates for the `grid` dimension.
-    pose : numpy.typing.ArrayLike or xarray.DataArray, optional
-        Legacy probe-pose coordinate labels; `pose` is an ordinary nonspatial dimension.
     k, j, i : numpy.typing.ArrayLike or xarray.DataArray, optional
         Integer native voxel coordinates. If not provided, dense zero-based
         coordinates are generated.
     dt : float, optional
         Time spacing in seconds, used when `time` is not provided.
-    t0 : float or numpy.typing.ArrayLike, default: 0.0
-        First time coordinate when `dt` is used. A 1D `t0` (one value per grid)
-        generates a grid-dependent `(time, grid)` coordinate.
+    t0 : float, default: 0.0
+        First time coordinate when `dt` is used. For dependent timestamps, provide
+        a DataArray with named dimensions through `time`.
     spacing : sequence[float], optional
         World spacing in `z/y/x` order. Mutually exclusive with `voxel_to_world`.
     origin : sequence[float], optional
@@ -325,12 +318,11 @@ def create_voxeldata(
     geometry_dims : tuple[str, ...], optional
         Ordered nonspatial affine dependencies. The affine shape must be
         `(*[sizes[d] for d in geometry_dims], 4, 4)`. A shared affine uses `()`.
-        If omitted, 3D stacks infer `grid`, or `pose` when no `grid` is present;
-        all other stacked cases require explicit names.
+        Stacks always require explicit names. If not provided, geometry is shared.
     affines : mapping[str, numpy.typing.ArrayLike], optional
         Named affine frames stored on the voxel-to-world index, each mapping the
-        current world frame (`z/y/x`) to a named frame. Values are `(4, 4)` or, for
-        grid-dependent geometry, `(ngrid, 4, 4)`.
+        current world frame (`z/y/x`) to a named frame. Values are `(4, 4)` or
+        full geometry-shaped stacks.
     units : str, default: "mm"
         Physical unit shared by every derived world coordinate.
     name : str, optional
@@ -371,14 +363,15 @@ def create_voxeldata(
     if TIME_DIM not in dims and time is not None:
         raise ValueError("time requires a 'time' dimension.")
 
-    timing_dim = GRID_DIM if GRID_DIM in dims else "pose"
-    named_time = (
-        time
-        if isinstance(time, xr.DataArray)
-        and time.ndim > 1
-        and time.dims != ("dim_0", "dim_1")
-        else None
-    )
+    if np.ndim(t0) != 0:
+        raise ValueError(
+            "t0 must be scalar; provide named time coordinates for timestamp dependencies."
+        )
+    if time is not None and np.ndim(time) > 1 and not isinstance(time, xr.DataArray):
+        raise ValueError(
+            "Multidimensional time requires a DataArray with named dimensions."
+        )
+    named_time = time if isinstance(time, xr.DataArray) and time.ndim > 1 else None
     if named_time is not None:
         if TIME_DIM not in named_time.dims or any(
             d not in dims or d in VOXEL_DIMS for d in named_time.dims
@@ -395,54 +388,6 @@ def create_voxeldata(
                 )
 
     dependent_time: xr.DataArray | None = named_time
-    if time is not None and named_time is None:
-        time_array = time.values if isinstance(time, xr.DataArray) else np.asarray(time)
-        if time_array.ndim == 2:
-            if timing_dim not in dims:
-                raise ValueError(
-                    "A 2D time array (one column per grid) requires a 'grid' "
-                    "dimension in dims."
-                )
-            grid_size = shape[dims.index(timing_dim)]
-            if time_array.shape[1] != grid_size:
-                raise ValueError(
-                    f"time has {time_array.shape[1]} grid columns, but the 'grid' "
-                    f"dimension size is {grid_size}."
-                )
-            dependent_time = xr.DataArray(
-                np.asarray(time_array, dtype=np.float64),
-                dims=(TIME_DIM, timing_dim),
-                attrs=dict(time.attrs) if isinstance(time, xr.DataArray) else {},
-            )
-    elif time is None and TIME_DIM in dims:
-        t0_array = np.asarray(t0)
-        if t0_array.ndim > 0:
-            if timing_dim not in dims:
-                raise ValueError(
-                    "A 1D t0 array (one value per grid) requires a 'grid' "
-                    "dimension in dims."
-                )
-            if t0_array.ndim != 1:
-                raise ValueError(
-                    f"t0 must be scalar or 1D, got shape {t0_array.shape}."
-                )
-            grid_size = shape[dims.index(timing_dim)]
-            if t0_array.size != grid_size:
-                raise ValueError(
-                    f"t0 has length {t0_array.size}, but the 'grid' dimension size "
-                    f"is {grid_size}."
-                )
-            time_size = shape[dims.index(TIME_DIM)]
-            dt_value = _require_spacing(TIME_DIM, dt)
-            t0_values = np.asarray(t0_array, dtype=np.float64)
-            if not np.all(np.isfinite(t0_values)):
-                raise ValueError("t0 must contain finite values.")
-            dependent_time = xr.DataArray(
-                t0_values[None, :]
-                + np.arange(time_size, dtype=np.float64)[:, None] * dt_value,
-                dims=(TIME_DIM, timing_dim),
-            )
-
     if dependent_time is not None:
         dependent_time = dependent_time.copy(deep=False)
         dependent_time.attrs.setdefault("units", _TIME_UNITS)
@@ -469,21 +414,11 @@ def create_voxeldata(
     coord_inputs: dict[str, npt.ArrayLike | xr.DataArray] = dict(extra_coords)
     if time is not None:
         coord_inputs[TIME_DIM] = time
-    if grid is not None:
-        coord_inputs[GRID_DIM] = grid
-    if pose is not None:
-        coord_inputs["pose"] = pose
     voxel_coord_inputs = {"k": k, "j": j, "i": i}
-
-    scalar_t0: float | None
-    if np.asarray(t0).ndim > 0:
-        scalar_t0 = None
-    else:
-        scalar_t0 = float(np.asarray(t0).item())
 
     data_coords: dict[str, xr.DataArray] = {}
     spacings = {TIME_DIM: dt}
-    origins = {TIME_DIM: scalar_t0}
+    origins = {TIME_DIM: float(t0)}
     for dim, size in zip(data_dims, data_array.shape, strict=True):
         if dim in VOXEL_DIMS:
             continue

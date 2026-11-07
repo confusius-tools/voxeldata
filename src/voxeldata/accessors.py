@@ -104,17 +104,6 @@ class VoxelDataAccessor:
         return self.index.geometry_dims
 
     @property
-    def is_grid_dependent(self) -> bool:
-        """Whether geometry still carries a per-grid affine stack.
-
-        Returns
-        -------
-        bool
-            Whether the index is grid-dependent.
-        """
-        return _require_index(self._obj).is_grid_dependent
-
-    @property
     def is_axis_aligned(self) -> bool:
         """Whether the voxel-to-world affine is axis-aligned.
 
@@ -153,9 +142,9 @@ class VoxelDataAccessor:
 
         Returns
         -------
-        (4, 4) numpy.ndarray or (ngrid, 4, 4) numpy.ndarray
-            Affine mapping active voxel dimensions to world coordinates, or a
-            per-grid stack while geometry is grid-dependent.
+        (4, 4) numpy.ndarray or (*geometry_shape, 4, 4) numpy.ndarray
+            Affine mapping active voxel dimensions to world coordinates, shared or
+            stacked along `geometry_dims`.
         """
         return get_voxel_to_world_affine(self._obj)
 
@@ -265,7 +254,7 @@ class VoxelDataAccessor:
 
         Returns
         -------
-        (4, 4) numpy.ndarray or (ngrid, 4, 4) numpy.ndarray
+        (4, 4) numpy.ndarray or (*geometry_shape, 4, 4) numpy.ndarray
             The named frame.
 
         Raises
@@ -292,8 +281,7 @@ class VoxelDataAccessor:
         name : str
             Frame name.
         affine : numpy.typing.ArrayLike
-            Homogeneous `(4, 4)` frame, or an `(ngrid, 4, 4)` stack when geometry
-            is grid-dependent.
+            Homogeneous `(4, 4)` frame, or a full stack in `geometry_dims` order.
         inplace : bool, default: False
             Whether to modify the DataArray in-place.
 
@@ -355,14 +343,13 @@ class VoxelDataAccessor:
         Parameters
         ----------
         voxel_to_world : numpy.typing.ArrayLike
-            Homogeneous `(4, 4)` affine, or an `(ngrid, 4, 4)` stack when the
-            DataArray has a `grid` dimension.
+            Homogeneous `(4, 4)` affine, or a full stack in `geometry_dims` order.
         units : str, optional
             World coordinate unit. If not provided, keeps the existing unit, or
             defaults to `"mm"` for a plain DataArray.
         geometry_dims : tuple[str, ...], optional
             Ordered nonspatial dimensions indexing the affine stack. A shared
-            affine uses `()`. Omitted 3D stacks infer legacy `grid` or `pose`.
+            affine uses `()`. Stacks always require explicit names.
         named_affines : mapping[str, numpy.typing.ArrayLike], optional
             Named affine frames for the new geometry.
         inplace : bool, default: False

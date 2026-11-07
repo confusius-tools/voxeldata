@@ -12,7 +12,7 @@ def test_properties_expose_index_geometry(sample_voxeldata_3d: xr.DataArray) -> 
     assert data.vd.voxel_dims == ("k", "j", "i")
     assert data.vd.world_dims == ("z", "y", "x")
     assert data.vd.units == "mm"
-    assert not data.vd.is_grid_dependent
+    assert not data.vd.geometry_dims
     assert data.vd.is_axis_aligned
     assert data.vd.fixed_voxel_coords == {}
     assert data.vd.spacing == {"k": 1.0, "j": 2.0, "i": 3.0}
@@ -193,7 +193,7 @@ def test_grid_selection_slices_named_affines(
         if isinstance(indexer, int)
         else grid_affines[positions]
     )
-    assert selected.vd.is_grid_dependent is not isinstance(indexer, int)
+    assert bool(selected.vd.geometry_dims) is not isinstance(indexer, int)
     np.testing.assert_array_equal(selected.vd.get_affine("lab"), expected)
     np.testing.assert_array_equal(selected.vd.get_affine("shared"), np.eye(4))
     np.testing.assert_array_equal(data.vd.get_affine("lab"), grid_affines)

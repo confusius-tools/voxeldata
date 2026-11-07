@@ -8,11 +8,10 @@ from typing import Any, Literal, SupportsFloat, SupportsIndex
 import numpy as np
 import xarray as xr
 
-from voxeldata._coordinates import get_coordinate_spacing_info
-from voxeldata._dims import CORE_DIMS, GRID_DIM, TIME_DIM, VOXEL_DIMS
+from voxeldata._coordinates import get_coordinate_spacing_info, get_representative_step
+from voxeldata._dims import CORE_DIMS, TIME_DIM, VOXEL_DIMS
 from voxeldata.geometry import (
     get_voxel_to_world_index,
-    get_voxel_to_world_index_spacing,
     get_voxel_to_world_spatial_dims,
     has_voxel_to_world_index,
     restore_voxel_to_world_index,
@@ -143,7 +142,7 @@ def _validate_dimension_coordinate(
     require_ascending : bool
         Whether strict monotonicity must be increasing specifically. Ignored if
         `require_numeric` is `False`. Voxel dims (`k`/`j`/`i`) may run in either
-        direction; `time`/`grid` must be increasing.
+        direction; `time` must be increasing.
 
     Raises
     ------
@@ -316,7 +315,6 @@ def _validate_regular_spacing(
             f"{missing_dims!r}. Present dims: {tuple(str(dim) for dim in da.dims)!r}."
         )
 
-    voxel_spacing = get_voxel_to_world_index_spacing(da)
     for dim in dims_to_check:
         if dim not in da.coords:
             raise ValueError(
@@ -326,11 +324,15 @@ def _validate_regular_spacing(
         coord = da.coords[dim]
         if not np.issubdtype(coord.dtype, np.number):
             continue
-        spacing_value = (
-            voxel_spacing[dim]
-            if dim in spatial_dims
-            else get_coordinate_spacing_info(dim, da, regular_spacing_tolerance).value
-        )
+        if dim in spatial_dims:
+            # Affines preserve regularity along native axes, even when scales vary
+            # between geometries. A scalar spacing query would reject valid stacks.
+            step, approximate = get_representative_step(coord.values)
+            spacing_value = None if approximate else (1.0 if step is None else step)
+        else:
+            spacing_value = get_coordinate_spacing_info(
+                dim, da, regular_spacing_tolerance
+            ).value
         if spacing_value is None:
             raise ValueError(
                 f"Coordinate {dim!r} must have regular spacing, but spacing is "
@@ -357,7 +359,9 @@ def _validate_uniform_time(da: xr.DataArray, tolerance: float) -> None:
         raise ValueError("DataArray must have a 'time' coordinate.")
     values = np.asarray(da.coords[TIME_DIM].values, dtype=np.float64)
     if values.ndim != 1:
-        raise ValueError("A grid-dependent 'time' coordinate must be selected first.")
+        raise ValueError(
+            "Timestamp dependencies must be selected before checking uniform time."
+        )
     if values.size <= 1:
         raise ValueError("DataArray must have more than one time point.")
     diffs = np.diff(values)
@@ -372,8 +376,8 @@ def canonicalize_voxeldata(data: xr.DataArray) -> xr.DataArray:
     but retains it as a scalar coordinate. This function restores every missing
     native voxel dimension (`k`, `j`, `i`) as a length-one dimension, rebuilds
     voxel-to-world geometry from the untouched affine, then orders dimensions as
-    `(...extra_dims, grid, time, k, j, i)`. Extra dimensions retain their relative
-    order. Missing `grid` and `time` dimensions are not restored.
+    `(...extra_dims, time, k, j, i)`. Extra dimensions retain their relative
+    order. Missing nonspatial dimensions are not restored.
 
     Parameters
     ----------
@@ -434,7 +438,7 @@ def ensure_voxeldata(data: xr.DataArray, **validate_kwargs: Any) -> xr.DataArray
     """Return a canonical, validated VoxelData array.
 
     This restores scalar-indexed native voxel dimensions, orders dimensions as
-    `(...extra_dims, grid, time, k, j, i)`, preserving the relative order of extra
+    `(...extra_dims, time, k, j, i)`, preserving the relative order of extra
     dimensions, then validates the result with
     [validate_voxeldata][voxeldata.validation.validate_voxeldata].
 
@@ -469,7 +473,6 @@ def validate_voxeldata(
     require_time: bool = False,
     require_uniform_time: bool = False,
     uniformity_tolerance: float = 1e-2,
-    allow_grid: bool = True,
     allow_extra_dims: bool = True,
     require_regular_spacing: bool = False,
     regular_spacing_tolerance: float = 1e-2,
@@ -481,7 +484,7 @@ def validate_voxeldata(
     This requires non-empty native voxel dimensions (`k`, `j`, `i`), their
     coordinates, a matching `VoxelToWorldIndex` carrying world `z`/`y`/`x`
     coordinates, and dimensions ordered as `(*nonspatial_dims, k, j, i)`.
-    Nonspatial dimensions, including optional `grid` and `time`, may appear in any
+    Nonspatial dimensions, including optional `time`, may appear in any
     order. Every dimension coordinate is validated. Optional flags add requirements needed
     by a particular consumer. Use
     [ensure_voxeldata][voxeldata.validation.ensure_voxeldata] when scalar indexing
@@ -498,10 +501,8 @@ def validate_voxeldata(
         value.
     uniformity_tolerance : float, default: 1e-2
         Maximum relative variation allowed between consecutive time intervals.
-    allow_grid : bool, default: True
-        Whether to allow a `grid` dimension.
     allow_extra_dims : bool, default: True
-        Whether to allow dimensions outside `time`, `grid`, `k`, `j`, and `i`.
+        Whether to allow dimensions outside `time`, `k`, `j`, and `i`.
     require_regular_spacing : bool, default: False
         Whether to require regular spacing for selected numeric dimension coordinates.
     regular_spacing_tolerance : float, default: 1e-2
@@ -541,9 +542,6 @@ def validate_voxeldata(
             raise ValueError("DataArray must have more than one time point.")
     if require_uniform_time:
         _validate_uniform_time(data, uniformity_tolerance)
-
-    if not allow_grid and GRID_DIM in data.dims:
-        raise ValueError("DataArray must not have a 'grid' dimension.")
 
     for dim in data.dims:
         _validate_dimension_coordinate(

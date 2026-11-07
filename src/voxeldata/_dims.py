@@ -11,11 +11,8 @@ WORLD_DIMS: tuple[str, ...] = ("z", "y", "x")
 VOXEL_DIMS: tuple[str, ...] = ("k", "j", "i")
 """Native voxel-space dimension names in VoxelData order."""
 
-GRID_DIM: str = "grid"
-"""Dimension selecting one voxel-to-world mapping per spatial sampling grid."""
-
 TIME_DIM: str = "time"
 """Temporal sample dimension name."""
 
-CORE_DIMS: tuple[str, ...] = (GRID_DIM, TIME_DIM, *VOXEL_DIMS)
+CORE_DIMS: tuple[str, ...] = (TIME_DIM, *VOXEL_DIMS)
 """Core dimension names in canonical order, not a required nonspatial order."""

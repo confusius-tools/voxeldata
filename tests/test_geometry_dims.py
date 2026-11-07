@@ -35,17 +35,17 @@ def test_shared_affine_with_nonspatial_dimensions(plain_volume):
     assert data.isel(grid=0, pose=1, view=1).vd.geometry_dims == ()
 
 
-def test_legacy_pose_inference_and_timestamp_coordinates():
-    """Old pose affine stacks and (time, pose) timestamps remain independent."""
+def test_explicit_pose_geometry_and_timestamp_coordinates():
+    """Pose geometry and named (time, pose) timestamps remain independent."""
     affines = np.broadcast_to(np.eye(4), (2, 4, 4)).copy()
     affines[1, 0, 3] = 17
     data = vd.create_voxeldata(
         np.zeros((3, 2, 1, 2, 3)),
         dims=("time", "pose", "k", "j", "i"),
-        pose=[10, 20],
-        dt=0.5,
-        t0=[0.0, 0.2],
+        extra_coords={"pose": [10, 20]},
+        time=xr.DataArray([[0, 0.2], [0.5, 0.7], [1, 1.2]], dims=("time", "pose")),
         voxel_to_world=affines,
+        geometry_dims=("pose",),
     )
     assert data.vd.geometry_dims == ("pose",)
     assert data.time.dims == ("time", "pose")
@@ -359,8 +359,7 @@ def test_multidimensional_time_lookup_survives_scalar_timestamp_dependency():
     data = vd.create_voxeldata(
         np.zeros((3, 2, 1, 1, 1)),
         dims=("time", "pose", "k", "j", "i"),
-        dt=1.0,
-        t0=[0.0, 0.2],
+        time=xr.DataArray([[0, 0.2], [1, 1.2], [2, 2.2]], dims=("time", "pose")),
         voxel_to_world=np.broadcast_to(np.eye(4), (3, 2, 4, 4)),
         geometry_dims=("time", "pose"),
     )
@@ -424,21 +423,16 @@ def test_spatial_names_cannot_be_reinterpreted_by_rename(multigeometry_data, nam
         multigeometry_data.rename({name: "other"})
 
 
-def test_legacy_unnamed_two_dimensional_time_array():
-    timestamps = xr.DataArray(
-        [[0.0, 0.2], [0.5, 0.7], [1.0, 1.2]],
-        attrs={"units": "s", "volume_acquisition_duration": 0.2},
-    )
-    data = vd.create_voxeldata(
-        np.zeros((3, 2, 1, 1, 1)),
-        dims=("time", "grid", "k", "j", "i"),
-        time=timestamps,
-        voxel_to_world=np.broadcast_to(np.eye(4), (2, 4, 4)),
-    )
-    assert data.time.dims == ("time", "grid")
-    np.testing.assert_allclose(data.time, timestamps)
-    assert data.time.attrs == timestamps.attrs
-    data.vd.validate()
+def test_unnamed_multidimensional_time_requires_named_dependencies():
+    timestamps = xr.DataArray([[0.0, 0.2], [0.5, 0.7], [1.0, 1.2]])
+    for time in (timestamps, timestamps.values):
+        with pytest.raises(ValueError, match="named"):
+            vd.create_voxeldata(
+                np.zeros((3, 2, 1, 1, 1)),
+                dims=("time", "grid", "k", "j", "i"),
+                time=time,
+                spacing=(1, 1, 1),
+            )
 
 
 @pytest.mark.parametrize(
@@ -466,3 +460,40 @@ def test_multiaxis_world_and_frame_values_against_input_oracles(
     np.testing.assert_array_equal(
         multigeometry_data.isel(time=2, view=1).vd.get_affine("lab"), expected_frame
     )
+
+
+@pytest.mark.parametrize("dim", ["grid", "pose", "view"])
+def test_dimension_names_never_infer_geometry(plain_volume, dim):
+    """Even historical dimension names require explicit affine dependencies."""
+    raw = plain_volume.expand_dims({dim: ["left", "right"]})
+    affines = np.broadcast_to(np.eye(4), (2, 4, 4)).copy()
+    affines[1, :3, :3] *= 2
+    with pytest.raises(ValueError, match="explicit geometry_dims"):
+        raw.vd.set_voxel_to_world(affines)
+    data = vd.create_voxeldata(
+        raw.data,
+        dims=raw.dims,
+        extra_coords={dim: raw[dim]},
+        voxel_to_world=affines,
+        geometry_dims=(dim,),
+    )
+    data.vd.validate()
+    point = data.isel({dim: 1, "k": 1, "j": 2, "i": 3})
+    np.testing.assert_allclose([point[d].item() for d in vd.WORLD_DIMS], [2, 4, 6])
+    shared = vd.create_voxeldata(
+        raw.data, dims=raw.dims, extra_coords={dim: raw[dim]}, spacing=(1, 1, 1)
+    )
+    assert shared.vd.geometry_dims == ()
+    np.testing.assert_allclose(shared.isel({dim: 1}).z.isel(j=0, i=0), [0, 1])
+
+
+def test_time_offsets_require_named_timestamps():
+    """Geometry dependencies never imply timestamp dependencies."""
+    with pytest.raises(ValueError, match="t0 must be scalar"):
+        vd.create_voxeldata(
+            np.zeros((3, 2, 1, 1, 1)),
+            dims=("time", "grid", "k", "j", "i"),
+            dt=1.0,
+            t0=[0, 0.2],  # ty: ignore[invalid-argument-type]
+            spacing=(1, 1, 1),
+        )

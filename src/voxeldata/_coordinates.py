@@ -115,7 +115,7 @@ def get_coordinate_spacing_info(
     ):
         return CoordinateSpacingInfo(value=None, median=None, warn_msg=None)
 
-    # A coordinate named after its dim is not necessarily 1D (e.g. a grid-dependent
+    # A coordinate named after its dim is not necessarily 1D (e.g. a geometry-dependent
     # "time" coordinate can be (time, grid)-shaped). Compute the step along `dim`
     # independently for every combination of the other dims' values.
     other_dims = [d for d in coord.dims if d != dim]

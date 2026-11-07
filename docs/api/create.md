@@ -32,8 +32,9 @@ Each series must be numeric, finite, and strictly increasing along `time`.
 
 Multidimensional timestamps are not an ordinary Xarray time index. Select all
 additional timestamp dependencies before time-label lookup or an analysis that
-requires a shared time vector. Existing unnamed 2D timestamps retain their legacy
-`(time, grid)` or `(time, pose)` interpretation.
+requires a shared time vector. Multidimensional timestamps must be DataArrays
+with explicit dimension names; unnamed arrays are rejected. `dt` and scalar `t0`
+generate a shared time vector.
 
 ## Consumer-defined auxiliary coordinates
 

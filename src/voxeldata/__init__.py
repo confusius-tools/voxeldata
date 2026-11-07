@@ -7,7 +7,7 @@ space. A VoxelData array is an `xarray.DataArray` with native voxel dimensions
 coordinates `(z, y, x)` from a voxel-to-world affine.
 """
 
-from voxeldata._dims import CORE_DIMS, GRID_DIM, TIME_DIM, VOXEL_DIMS, WORLD_DIMS
+from voxeldata._dims import CORE_DIMS, TIME_DIM, VOXEL_DIMS, WORLD_DIMS
 from voxeldata.accessors import VoxelDataAccessor
 from voxeldata.affine import (
     apply_affine,
@@ -55,7 +55,6 @@ from voxeldata.validation import (
 
 __all__ = [
     "CORE_DIMS",
-    "GRID_DIM",
     "TIME_DIM",
     "VOXEL_DIMS",
     "WORLD_DIMS",

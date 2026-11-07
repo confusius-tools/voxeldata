@@ -38,10 +38,10 @@ def test_constructor_reorders_data_not_just_dimension_names(
     result = vd.create_voxeldata(
         values,
         dims=("i", "component", "j", "grid", "k", "time"),
-        extra_coords={"component": ["a", "b"]},
+        extra_coords={"component": ["a", "b"], "grid": [10, 20]},
         dt=0.5,
-        grid=[10, 20],
         voxel_to_world=grid_affines,
+        geometry_dims=("grid",),
     )
     assert result.dims == ("component", "grid", "time", "k", "j", "i")
     np.testing.assert_array_equal(

@@ -100,7 +100,7 @@ def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
     )
     corners_h = np.hstack([corners, np.ones((len(corners), 1))]).T
 
-    # (ngrid, 4, 4) @ (4, 8) broadcasts to one corner set per grid.
+    # (*geometry_shape, 4, 4) @ (4, 8) broadcasts to one corner set per grid.
     world_corners = (affine @ corners_h)[..., :-1, :]
     bounds = np.stack([world_corners.min(axis=-1), world_corners.max(axis=-1)], axis=-2)
 
@@ -349,8 +349,8 @@ def reindex_voxels(da: xr.DataArray) -> xr.DataArray:
     -------
     xarray.DataArray
         `da` with voxel coordinates rebased to `0, 1, ..., dim - 1` and an updated
-        `voxel_to_world` affine. World coordinates are unchanged. For grid-dependent
-        geometry, `voxel_to_world` stays a per-grid stack: each grid keeps its own
+        `voxel_to_world` affine. World coordinates are unchanged. For geometry-dependent
+        geometry, `voxel_to_world` stays a geometry-dependent stack: each grid keeps its own
         origin and direction (spacing is shared, per the equal-scale invariant), so
         rebasing is performed for every geometry without evaluating world coordinates.
         Explicit geometry may have varying spatial scalings.

@@ -42,7 +42,7 @@ hide:
 A VoxelData array is an `xarray.DataArray` with:
 
 1. dimensions `(*nonspatial_dims, k, j, i)`, with arbitrary leading dimension
-   order, optional special dimensions `time` and `grid`, and `k`/`j`/`i` always
+   order, the optional temporal dimension `time`, and `k`/`j`/`i` always
    present and always last;
 2. a `VoxelToWorldIndex` on the world coordinates `z`/`y`/`x`, deriving them
    lazily from a voxel-to-world affine;
@@ -52,20 +52,17 @@ A VoxelData array is an `xarray.DataArray` with:
 matrices. The required affine shape is
 `(*[data.sizes[d] for d in geometry_dims], 4, 4)`. Unrelated nonspatial dimensions
 share geometry. A single `(4, 4)` affine has `geometry_dims=()`, regardless of the
-array's nonspatial dimensions.
+array's nonspatial dimensions. `grid` and `pose` are ordinary nonspatial names.
 
-For compatibility, omitted `geometry_dims` on a 3D stack infers `("grid",)`, or
-`("pose",)` when only the legacy probe-pose dimension is present. All other stacks
-require explicit names; matching dimension lengths are never used to infer axes.
-Identical affines are allowed. Inferred legacy stacks retain their equal-scale
-validation; explicit geometry dependencies may have varying spatial scalings.
+All stacks require explicit dependency names; dimension names and matching lengths
+never infer geometry axes. Identical affines and varying spatial scales are allowed.
 `time` represents temporal samples, independently of geometry dependencies.
 
 Creation preserves the input nonspatial dimension order, so both
 `(time, grid, k, j, i)` and `(grid, time, k, j, i)` are valid. Canonicalization and
-`ensure_voxeldata` normalize to `(...extra_dims, grid, time, k, j, i)`, preserving
-the relative order of extra dimensions and omitting absent `grid`/`time` dimensions.
-Scalar-selected spatial dimensions are restored, but a scalar-selected grid is not.
+`ensure_voxeldata` normalize to `(...extra_dims, time, k, j, i)`, preserving
+the relative order of extra dimensions and omitting absent `time` dimensions.
+Scalar-selected spatial dimensions are restored, but selected nonspatial dimensions are not.
 
 World coordinates remain lazy: representing, indexing, transposing, or rebuilding
 the model does not generate dense world arrays. Explicitly requesting coordinate
@@ -94,8 +91,8 @@ data.vd.direction    # (3, 3) world direction matrix
 ```
 
 Pass `voxel_to_world` instead of `spacing`/`origin`/`direction` for an arbitrary
-(including oblique) affine. Time and legacy grid/probe-pose coordinates are supported
-with `time`, `grid`, `pose`, `dt`, and `t0`.
+(including oblique) affine. Supply nonspatial labels through `extra_coords` and
+timestamps through `time`, or generate a shared time vector with `dt` and scalar `t0`.
 
 ## Named geometry dependencies
 

@@ -155,7 +155,9 @@ def test_rotated_grid_coordinates(
 ) -> None:
     rotated = np.array([[0, -2, 0, 100], [1, 0, 0, 200], [0, 0, 3, 300], [0, 0, 0, 1]])
     data = plain_volume.expand_dims(grid=[10, 20])
-    result = vd.attach_voxel_to_world_index(data, np.stack([voxel_affine, rotated]))
+    result = vd.attach_voxel_to_world_index(
+        data, np.stack([voxel_affine, rotated]), geometry_dims=("grid",)
+    )
     point = result.isel(grid=1, k=1, j=2, i=3)
     np.testing.assert_allclose(
         [point.coords[d].item() for d in ("z", "y", "x")], [96, 201, 309]
@@ -168,7 +170,7 @@ def test_rotated_grid_coordinates(
 def test_grid_scalar_geometry_requirements(
     sample_voxeldata_grids: xr.DataArray, property_name: str
 ) -> None:
-    with pytest.raises(ValueError, match="requires grid-independent geometry"):
+    with pytest.raises(ValueError, match="requires a single geometry"):
         getattr(sample_voxeldata_grids.vd, property_name)
     assert sample_voxeldata_grids.isel(grid=1).vd.origin == {"z": 110, "y": 0, "x": 35}
 
@@ -178,7 +180,6 @@ def test_grid_scalar_geometry_requirements(
     [
         ("nonfinite", "finite"),
         ("last_row", "homogeneous"),
-        ("scale", "equal spatial scale"),
     ],
 )
 def test_grid_affine_validation(
@@ -192,7 +193,9 @@ def test_grid_affine_validation(
         grid_affines[1, 0, 0] = 2
     with pytest.raises(ValueError, match=message):
         vd.attach_voxel_to_world_index(
-            plain_volume.expand_dims(grid=[10, 20]), grid_affines
+            plain_volume.expand_dims(grid=[10, 20]),
+            grid_affines,
+            geometry_dims=("grid",),
         )
 
 

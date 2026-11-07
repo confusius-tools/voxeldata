@@ -199,7 +199,7 @@ def sample_voxeldata_grids(
     """
     data = plain_volume.expand_dims(grid=[10, 20]).copy(deep=True)
     data.data = np.arange(48, dtype=float).reshape(2, 2, 3, 4)
-    return vd.attach_voxel_to_world_index(data, grid_affines)
+    return vd.attach_voxel_to_world_index(data, grid_affines, geometry_dims=("grid",))
 
 
 @pytest.fixture

@@ -12,7 +12,7 @@ voxel arrays, built on [xarray](https://docs.xarray.dev).
 A VoxelData array is an `xarray.DataArray` that is always:
 
 - dimensioned `(*nonspatial_dims, k, j, i)` — leading dimensions may appear in any
-  order, including optional special dimensions `time` and `grid`; the native voxel
+  order, including the optional temporal dimension `time`; the native voxel
   indices `k`/`j`/`i` are always present and always last;
 - backed by a single [`VoxelToWorldIndex`](src/voxeldata/geometry.py) attached to
   the world coordinates `z`/`y`/`x`, which derives them lazily from a shared affine
@@ -68,7 +68,8 @@ data = vd.create_voxeldata(
 
 `geometry_dims` names the nonspatial dimensions indexing an affine stack. For
 example, `geometry_dims=("time", "view")` requires `(ntime, nview, 4, 4)` matrices;
-other axes, such as channels, share geometry. A single `(4, 4)` affine has no
+other axes, such as channels, share geometry. `grid` and `pose` are ordinary
+nonspatial names with no special behavior. A single `(4, 4)` affine has no
 geometry dependencies, even when nonspatial dimensions are present. Timing
 coordinates are independent of these geometry dependencies. A named `time`
 DataArray may use `(time, view, channel, ...)`, with any number of nonspatial
@@ -77,20 +78,20 @@ additional timestamp axes before using a shared-time index or analysis.
 Auxiliary coordinates such as `slice_time(time, k)` may be added with
 `assign_coords`; their acquisition-specific meaning belongs to the consumer.
 
-Existing `(ngrid, 4, 4)` stacks still infer `geometry_dims=("grid",)` (or `"pose"`
-for legacy probe poses when no `grid` is present). Other stacks require explicit
-names; matching lengths never determine their meaning:
+All affine stacks require explicit `geometry_dims`; dimension names or matching
+lengths never determine their meaning. Coordinates for arbitrary nonspatial axes
+are supplied through `extra_coords`:
 
 ```python
 data = vd.create_voxeldata(
     np.zeros((2, 3, 64, 128)),
-    dims=("grid", "k", "j", "i"),
-    grid=np.array([0, 1]),
+    dims=("view", "k", "j", "i"),
+    extra_coords={"view": [0, 1]},
     voxel_to_world=affines,          # (2, 4, 4)
-    geometry_dims=("grid",),        # explicit; may be omitted for legacy stacks
+    geometry_dims=("view",),
 )
 
-assert data.vd.geometry_dims == ("grid",)
+assert data.vd.geometry_dims == ("view",)
 ```
 
 **Limitation:** native Xarray `.reindex()` is unsupported on geometry dimensions;
@@ -101,15 +102,15 @@ changes those labels is also unsupported. This does not affect the explicit
 Creation preserves the supplied nonspatial dimension order. For example, both
 `(time, grid, k, j, i)` and `(grid, time, k, j, i)` are valid.
 `data.vd.canonicalize()` and `data.vd.ensure()` normalize to
-`(...extra_dims, grid, time, k, j, i)`, preserving the relative order of extra
-dimensions and omitting absent `grid`/`time` dimensions. Canonicalization also
-restores scalar-selected spatial dimensions, but does not restore a selected grid.
+`(...extra_dims, time, k, j, i)`, preserving the relative order of extra
+dimensions and omitting absent `time` dimensions. Canonicalization also
+restores scalar-selected spatial dimensions, but does not restore selected nonspatial dimensions.
 
 ## Public API
 
 | Area | Functions |
 |---|---|
-| Dimensions | `VOXEL_DIMS`, `WORLD_DIMS`, `GRID_DIM`, `TIME_DIM`, `CORE_DIMS` |
+| Dimensions | `VOXEL_DIMS`, `WORLD_DIMS`, `TIME_DIM`, `CORE_DIMS` |
 | Construction | `create_voxeldata`, `attach_voxel_to_world_index` |
 | Accessor | `data.vd` ([`VoxelDataAccessor`](src/voxeldata/accessors.py)) |
 | Geometry | `get_voxel_to_world_affine`, `get_voxel_to_world_units`, `get_voxel_to_world_index_origin`, `get_voxel_to_world_index_spacing`, `get_voxel_to_world_direction_matrix`, `convert_length_units` |
