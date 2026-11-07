@@ -2,7 +2,8 @@
 
 ## Implemented foundations
 
-Named geometry dependencies and generic extraction are implemented on `main`.
+Named geometry dependencies and generic extraction are available in VoxelData
+`0.0.4` and implemented on `main`.
 No outstanding VoxelData feature work is currently identified as necessary for
 the tested ConfUSIus integration.
 
@@ -23,10 +24,9 @@ the tested ConfUSIus integration.
 
 API contracts and usage belong in the README and `docs/api/`.
 
-## Deferred release and downstream adoption
+## Deferred downstream adoption
 
-- Agree and publish a VoxelData release containing the current API changes.
-- Update ConfUSIus's minimum dependency and lockfile to that release.
+- Update ConfUSIus's minimum dependency and lockfile to VoxelData `0.0.4`.
 - Resolve the ConfUSIus integration draft's conflicts with its target branch.
 - Validate the updated branch against the published dependency, including the
   complete unit, integration, visual-regression, and supported OS/Python matrix.
