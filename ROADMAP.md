@@ -1,84 +1,61 @@
 # Roadmap
 
-## 1. Finish named-geometry integration
+## Implemented foundations
 
-Support named geometry dependencies without coupling ordinary voxel and
-nonspatial indexing in ways that break downstream extraction.
+Named geometry dependencies and generic extraction are implemented on `main`.
+No outstanding VoxelData feature work is currently identified as necessary for
+the tested ConfUSIus integration.
 
-### Accepted limitation: geometry-axis reindexing
+- Affine stacks use explicit, ordered `geometry_dims`, independently of timestamp
+  dependencies. Native voxel and nonspatial labels retain ordinary Xarray indexes;
+  the world index owns only derived spatial coordinates.
+- Geometry and named frames support selection, transpose, concatenation,
+  reconstruction, and lazy arrays. Tests cover independent numerical oracles,
+  native labels, multiple geometry dependencies, and signal noncomputation.
+- Generic mask/label validation, extraction, and reconstruction live in VoxelData.
+  Physical sampling geometry controls mask compatibility. Base extraction works
+  without flox or Dask; acceleration and lazy arrays are independent extras.
+- ConfUSIus [draft PR #569](https://github.com/confusius-tools/confusius/pull/569)
+  delegates geometry and extraction to VoxelData. Probe positions use `pose`;
+  acquisition defaults, timing policies, and fUSI analysis remain in ConfUSIus.
+  Its unit suite, including napari and Matplotlib visual comparisons, passes
+  against the sibling VoxelData checkout.
+
+API contracts and usage belong in the README and `docs/api/`.
+
+## Deferred release and downstream adoption
+
+- Agree and publish a VoxelData release containing the current API changes.
+- Update ConfUSIus's minimum dependency and lockfile to that release.
+- Resolve the ConfUSIus integration draft's conflicts with its target branch.
+- Validate the updated branch against the published dependency, including the
+  complete unit, integration, visual-regression, and supported OS/Python matrix.
+- Complete review and merge the ConfUSIus integration.
+
+## Optional future work
+
+### Geometry-axis reindexing
 
 Native Xarray `.reindex()` is unsupported on dimensions listed in
 `data.vd.geometry_dims`. Use `.isel()` or `.sel()` to select/reorder existing
-geometry labels instead. Alignment that changes geometry labels has the same
-restriction. Filling signal samples for an unknown label does not define its
-geometry.
+geometry labels instead. Alignment or coordinate replacement that changes those
+labels has the same restriction. Filling signal samples for an unknown label does
+not define its geometry.
 
-The world index owns `z/y/x`, while ordinary indexes own geometry-axis labels.
-Xarray's reindexing path does not synchronize their separate metadata. No Xarray
-bug has been established, and no upstream change or monkey-patch is planned for
-this iteration. VoxelData access/validation detects mismatching indexed geometry
-labels, but raw world-coordinate access cannot perform that parent-array check.
+Xarray's reindexing path does not synchronize the world index's affine metadata
+with the independently indexed geometry labels. VoxelData access/validation
+detects mismatching indexed labels, but raw world-coordinate access cannot perform
+that parent-array check. Any future support must preserve independent indexing
+and define geometry for added labels, without monkey-patching Xarray.
 
-This limitation is distinct from `.vd.reindex_voxels()` and
-`.vd.reindex_voxels_like()`, which explicitly rebuild geometry and remain supported.
-Native geometry-axis reindexing can be revisited separately; it is not a release
-prerequisite.
+This remains an accepted limitation, not a release prerequisite.
+`.vd.reindex_voxels()` and `.vd.reindex_voxels_like()` explicitly rebuild geometry
+and remain supported.
 
-### Remaining integration work
+### Further modality-independent utilities
 
-- Keep affine metadata contiguous with named, labelled batch axes. A dictionary
-  keyed by labels alone does not solve synchronization with parent-array indexing.
-- Preserve independent native voxel and nonspatial indexing. Reintroducing one
-  joint index covering `k/j/i` and probe poses previously caused problems in
-  ConfUSIus extraction.
-- Cover mask/label extraction, spatial stacking and unstacking, scalar and
-  vectorized indexing, transpose, concatenation, and lazy arrays.
-- Update the ConfUSIus integration draft
-  [PR #569](https://github.com/confusius-tools/confusius/pull/569), including
-  constructor/serialization metadata and downstream expectations as needed. Run
-  the full ConfUSIus suite, including napari, integration, and visual-regression
-  tests, and report any unavailable checks.
-
-## 2. Move generic extraction from ConfUSIus
-
-**Implemented in the feature branch; downstream delegation is in draft PR #569.**
-
-The functions in `confusius.extract` operate on spatially referenced voxel arrays,
-not specifically on functional ultrasound data. The standalone `voxeldata.extract`
-module now provides:
-
-- `extract_with_mask`: flatten selected mask axes, retaining other signal axes.
-- `extract_with_labels`: aggregate voxel samples by flat label maps or overlapping
-  stacked masks, retaining region identifiers and nonspatial axes.
-- `unmask`: reconstruct spatial arrays from extracted samples and a mask.
-
-### Scope and acceptance conditions
-
-- Identify and move only the generic mask/label validation and geometry-alignment
-  helpers these functions require. Do not import ConfUSIus into VoxelData or bring
-  fUSI acquisition-timing requirements into generic validation.
-- Specify mask/label compatibility for shared and geometry-dependent grids. Do not
-  broadcast a mask across physically different grids without an explicit rule.
-- Preserve native voxel labels, nonspatial coordinates and metadata, region
-  identifiers, reconstruction geometry, and existing lazy-array behavior.
-- Extraction is included out of the box through Xarray's grouped reductions.
-  Extras `accel` (flox) and `lazy` (Dask array) are independent and optional;
-  `all` combines both runtime extras. Both backends are dev dependencies for CI.
-  Native and accelerated reductions share the same public API and numerical tests.
-- Port applicable ConfUSIus tests and add multi-geometry and Dask regressions with
-  independent extraction/reconstruction oracles.
-- ConfUSIus draft PR #569 now uses thin acquisition-aware adapters and retains
-  `.fusi.extract`, without duplicated extraction/alignment algorithms. It now
-  depends on published `voxeldata>=0.0.3`; extraction is directly re-exported while
-  acquisition-specific defaults and validation remain explicit in ConfUSIus.
-  Review and merge remain.
-- Public functions are in `voxeldata.extract`, with top-level re-exports. Generic
-  validators live in `voxeldata.masks`. No extraction accessor methods or
-  compatibility aliases are added.
-
-## Further candidates
-
-After extraction, assess other modality-independent utilities individually. Move
-code only when it directly serves the VoxelData model and has a clear dependency
-boundary; keep modality-specific analysis, acquisition timing, atlas services, and
-visualization in their appropriate downstream packages.
+Assess additional ConfUSIus utilities individually when another consumer needs
+them. Move code only when it directly serves the VoxelData model and has a clear
+dependency boundary. Keep acquisition policies, modality-specific analysis, atlas
+services, and visualization in their appropriate downstream packages. No further
+extraction target is currently committed.
