@@ -4,13 +4,25 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from voxeldata.extract import extract_with_mask, unmask
+from voxeldata.extract import extract_with_labels, extract_with_mask, unmask
 from voxeldata.geometry import (
     attach_voxel_to_world_index,
     get_voxel_to_world_affine,
     get_voxel_to_world_units,
     has_voxel_to_world_index,
 )
+
+
+def test_extract_with_labels_on_base_install(
+    sample_voxeldata_3dt: xr.DataArray, make_sample_voxeldata_mask
+) -> None:
+    """Label reductions work without optional acceleration or lazy backends."""
+    labels = make_sample_voxeldata_mask(dtype=int)
+    labels.data[0, 1, 2] = 1
+    labels.data[1, 2, 3] = 1
+    result = extract_with_labels(sample_voxeldata_3dt, labels)
+    np.testing.assert_array_equal(result.region, [1])
+    np.testing.assert_allclose(result.values[:, 0], [14.5, 38.5, 62.5, 86.5])
 
 
 def test_extract_with_mask_selects_expected_voxels(
@@ -130,6 +142,7 @@ def test_extract_with_mask_preserves_dask_laziness(
     sample_voxeldata_3dt: xr.DataArray, make_sample_voxeldata_mask
 ) -> None:
     """Dask-backed fUSI data remain lazy after extraction."""
+    pytest.importorskip("dask.array")
     mask = make_sample_voxeldata_mask()
     mask.data[0, 1, 2] = True
     chunked = sample_voxeldata_3dt.chunk({"time": 2})

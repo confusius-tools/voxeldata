@@ -12,6 +12,27 @@ permissions:
   contents: read
 
 jobs:
+  base:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Install base package and pytest
+        run: |
+          uv venv
+          uv pip install -e . pytest
+
+      - name: Test without optional dependencies
+        run: |
+          .venv/bin/python -c "import importlib.util; assert all(importlib.util.find_spec(name) is None for name in ('dask', 'flox', 'zarr', 'h5netcdf'))"
+          .venv/bin/python -m pytest -o addopts= tests/test_create.py tests/test_extract_mask.py
+
   test:
     runs-on: ${{ matrix.os }}
     strategy:

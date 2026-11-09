@@ -13,8 +13,6 @@ from voxeldata.geometry import (
     get_voxel_to_world_units,
 )
 
-pytestmark = pytest.mark.usefixtures("label_backend")
-
 
 def _canonical(data, dims):
     """Build a canonical voxel-grid DataArray for `data` with `dims`.
@@ -101,6 +99,7 @@ class TestWithLabels:
         ):
             extract.extract_with_labels(sample_voxeldata_3dt, labels)
 
+    @pytest.mark.usefixtures("label_backend")
     def test_output_dims_4d(self, sample_voxeldata_3dt):
         """Test that spatial dims are replaced by region for 3D+t data."""
         labels_data = np.zeros(sample_voxeldata_3dt.shape[1:], dtype=int)
@@ -112,7 +111,11 @@ class TestWithLabels:
 
         assert result.dims == ("time", "region")
         np.testing.assert_array_equal(result.coords["region"].values, [1, 2])
+        np.testing.assert_allclose(
+            result.values, [[5.5, 17.5], [29.5, 41.5], [53.5, 65.5], [77.5, 89.5]]
+        )
 
+    @pytest.mark.usefixtures("label_backend")
     def test_restores_scalar_voxel_dim(self, sample_voxeldata_3dt):
         """`data` with a scalar-reduced voxel dim (e.g. from `.isel(k=0)`) works.
 
@@ -133,7 +136,11 @@ class TestWithLabels:
 
         assert result.dims == ("time", "region")
         np.testing.assert_array_equal(result.coords["region"].values, [1, 2])
+        np.testing.assert_allclose(
+            result.values, [[4.5, 6.5], [28.5, 30.5], [52.5, 54.5], [76.5, 78.5]]
+        )
 
+    @pytest.mark.usefixtures("label_backend")
     def test_output_dims_3d(self):
         """Test that spatial dims are fully replaced for pure spatial data."""
         data = _canonical(np.ones((3, 4, 5)), ("k", "j", "i"))
@@ -147,7 +154,9 @@ class TestWithLabels:
 
         assert result.dims == ("region",)
         np.testing.assert_array_equal(result.coords["region"].values, [1, 2, 3])
+        np.testing.assert_array_equal(result.values, [1, 1, 1])
 
+    @pytest.mark.usefixtures("label_backend")
     def test_background_excluded(self):
         """Test that label 0 (background) is not included in output."""
         data = _canonical(np.ones((1, 5, 5)), ("k", "j", "i"))
@@ -172,6 +181,7 @@ class TestWithLabels:
             ("std", np.std),
         ],
     )
+    @pytest.mark.usefixtures("label_backend")
     def test_reduction_correctness(self, reduction, np_func):
         """Test that each reduction matches the corresponding numpy function."""
         rng = np.random.default_rng(0)
@@ -200,6 +210,7 @@ class TestWithLabels:
         with pytest.raises(ValueError, match="Invalid reduction"):
             extract.extract_with_labels(data, labels, reduction="invalid")  # ty: ignore[invalid-argument-type]
 
+    @pytest.mark.usefixtures("label_backend")
     def test_dask_laziness(self):
         """Test that the result is lazy when the input is a Dask-backed array."""
         rng = np.random.default_rng(0)
@@ -223,6 +234,7 @@ class TestWithLabels:
         expected = extract.extract_with_labels(data_eager, labels)
         np.testing.assert_allclose(result.values, expected.values)
 
+    @pytest.mark.usefixtures("label_backend")
     def test_stacked_masks_format(self, sample_voxeldata_3dt):
         """Test extraction with stacked mask format (mask, k, j, i)."""
         _, nz, ny, nx = sample_voxeldata_3dt.shape
@@ -248,6 +260,7 @@ class TestWithLabels:
             sample_voxeldata_3dt.values[:, 1, :, :].mean(axis=(-2, -1)),
         )
 
+    @pytest.mark.usefixtures("label_backend")
     def test_stacked_masks_overlapping(self, sample_voxeldata_3dt):
         """Test extraction with overlapping stacked masks."""
         _, nz, ny, nx = sample_voxeldata_3dt.shape
@@ -273,6 +286,7 @@ class TestWithLabels:
             sample_voxeldata_3dt.values[:, 1:3, :, :].mean(axis=(-3, -2, -1)),
         )
 
+    @pytest.mark.usefixtures("label_backend")
     def test_stacked_masks_duplicate_ids_non_overlapping(self, sample_voxeldata_3dt):
         """Non-overlapping layers sharing the same raw id must stay distinct regions.
 
@@ -303,6 +317,7 @@ class TestWithLabels:
             sample_voxeldata_3dt.values[:, 1, :, :].mean(axis=(-2, -1)),
         )
 
+    @pytest.mark.usefixtures("label_backend")
     def test_stacked_masks_duplicate_ids_overlapping(self, sample_voxeldata_3dt):
         """Overlapping layers sharing the same raw id must stay distinct regions."""
         _, nz, ny, nx = sample_voxeldata_3dt.shape
@@ -341,6 +356,7 @@ class TestWithLabels:
         with pytest.raises(ValueError, match="exactly one unique non-zero"):
             extract.extract_with_labels(sample_voxeldata_3dt, labels)
 
+    @pytest.mark.usefixtures("label_backend")
     def test_dask_spatial_chunks(self):
         """Test correctness when spatial dims are chunked in the Dask array."""
         rng = np.random.default_rng(42)
@@ -360,6 +376,7 @@ class TestWithLabels:
         expected = extract.extract_with_labels(data_eager, labels)
         np.testing.assert_allclose(result.values, expected.values)
 
+    @pytest.mark.usefixtures("label_backend")
     def test_dask_backed_labels(self):
         """Test that Dask-backed labels do not raise and produce correct results.
 
