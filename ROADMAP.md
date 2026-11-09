@@ -31,6 +31,8 @@ API contracts and usage belong in the README and `docs/api/`.
 - Validate the updated branch against the published dependency, including the
   complete unit, integration, visual-regression, and supported OS/Python matrix.
 - Complete review and merge the ConfUSIus integration.
+- Delegate ConfUSIus Zarr persistence to VoxelData's `load`/`save`, retaining
+  acquisition formats, NIfTI, and atlas-specific restoration in ConfUSIus.
 
 ## Optional future work
 
