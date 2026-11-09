@@ -1,6 +1,6 @@
 [project]
 name = "voxeldata"
-version = "0.0.4"
+version = "0.0.5"
 description = "Spatially referenced voxel arrays built on xarray."
 readme = "README.md"
 license = "BSD-3-Clause"

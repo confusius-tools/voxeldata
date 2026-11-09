@@ -16,8 +16,13 @@ the tested ConfUSIus integration.
 - Generic mask/label validation, extraction, and reconstruction live in VoxelData.
   Physical sampling geometry controls mask compatibility. Base extraction works
   without flox or Dask; acceleration and lazy arrays are independent extras.
+- Zarr and NetCDF persistence are implemented on `main` for VoxelData `0.0.5`,
+  preserving geometry dependencies, units, native labels, timestamps, and named
+  frames without storing dense world coordinates. Storage backends use the
+  optional `io` extra; loading also works without Dask.
 - ConfUSIus [draft PR #569](https://github.com/confusius-tools/confusius/pull/569)
-  delegates geometry and extraction to VoxelData. Probe positions use `pose`;
+  delegates geometry, extraction, and ordinary Zarr array persistence to
+  VoxelData. Probe positions use `pose`;
   acquisition defaults, timing policies, and fUSI analysis remain in ConfUSIus.
   Its unit suite, including napari and Matplotlib visual comparisons, passes
   against the sibling VoxelData checkout.
@@ -26,13 +31,12 @@ API contracts and usage belong in the README and `docs/api/`.
 
 ## Deferred downstream adoption
 
-- Update ConfUSIus's minimum dependency and lockfile to VoxelData `0.0.4`.
+- Publish VoxelData `0.0.5` with persistence support.
+- Update ConfUSIus's minimum dependency and lockfile to VoxelData `0.0.5`.
 - Resolve the ConfUSIus integration draft's conflicts with its target branch.
 - Validate the updated branch against the published dependency, including the
   complete unit, integration, visual-regression, and supported OS/Python matrix.
 - Complete review and merge the ConfUSIus integration.
-- Delegate ConfUSIus Zarr persistence to VoxelData's `load`/`save`, retaining
-  acquisition formats, NIfTI, and atlas-specific restoration in ConfUSIus.
 
 ## Optional future work
 
