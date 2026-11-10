@@ -1,4 +1,4 @@
-"""Persistence tests through the public load/save API."""
+"""Persistence tests through the public load_array/save API."""
 
 import json
 from pathlib import Path
@@ -57,7 +57,7 @@ def test_roundtrip(request, fixture, store):
     expected = vd.ensure_voxeldata(source)
     path, options = store
     vd.save(source, path, **options)
-    with vd.load(path, chunks=None) as actual:
+    with vd.load_array(path, chunks=None) as actual:
         vd.validate_voxeldata(actual)
         xr.testing.assert_identical(actual, expected)
         assert actual.vd.geometry_dims == expected.vd.geometry_dims
@@ -84,7 +84,7 @@ def test_ordered_dependencies_native_labels_and_world_coordinates(
     )
     path, options = store
     vd.save(source, path, **options)
-    with vd.load(path, chunks=None) as actual:
+    with vd.load_array(path, chunks=None) as actual:
         assert actual.vd.geometry_dims == ("view", "time")
         assert actual.vd.units == "um"
         assert_allclose(actual.vd.voxel_to_world, affine)
@@ -110,7 +110,7 @@ def test_shared_geometry_multiaxis_timestamps(multiaxis_timestamps, store):
     ).assign_coords(slice_time=(("time", "k"), [[0.1], [1.1], [2.1]]))
     path, options = store
     vd.save(source, path, **options)
-    with vd.load(path, chunks=None) as actual:
+    with vd.load_array(path, chunks=None) as actual:
         xr.testing.assert_identical(actual, vd.ensure_voxeldata(source))
         assert actual.vd.geometry_dims == ()
         assert actual.vd.voxel_to_world.shape == (4, 4)
@@ -122,7 +122,7 @@ def test_scalar_selected_voxels_are_restored(sample_voxeldata_3d_oblique, store)
     source = sample_voxeldata_3d_oblique.isel(j=1)
     path, options = store
     vd.save(source, path, **options)
-    with vd.load(path, chunks=None) as actual:
+    with vd.load_array(path, chunks=None) as actual:
         xr.testing.assert_identical(actual, vd.ensure_voxeldata(source))
         assert_array_equal(actual.j, [1])
 
@@ -155,7 +155,7 @@ def test_unnamed_array(sample_voxeldata_3d, store):
     source = sample_voxeldata_3d.rename(None)
     path, options = store
     vd.save(source, path, **options)
-    with vd.load(path) as actual:
+    with vd.load_array(path) as actual:
         assert actual.name is None
         assert_array_equal(actual, source)
 
@@ -177,7 +177,7 @@ def test_lazy_load_and_deferred_save(sample_voxeldata_3d, store):
     assert calls == []
     task.compute(scheduler="synchronous")
     assert calls == [True]
-    with vd.load(path, chunks={}) as actual:
+    with vd.load_array(path, chunks={}) as actual:
         assert isinstance(actual.data, da.Array)
         assert_array_equal(actual.compute(), np.arange(24).reshape(2, 3, 4))
 
@@ -199,7 +199,7 @@ def test_default_loading_uses_available_backend(
         monkeypatch.setattr("voxeldata.io.find_spec", lambda name: None)
     tasks = []
     with Callback(pretask=lambda *args: tasks.append(args)):
-        actual = vd.load(path)
+        actual = vd.load_array(path)
     with actual:
         assert tasks == []
         if dask_available:
@@ -221,7 +221,7 @@ def test_explicit_loading_chunks_are_preserved(sample_voxeldata_3d, store, chunk
         encoding={"intensity": {encoding_key: (1, 3, 4)}},
         **options,
     )
-    with vd.load(path, chunks=chunks) as actual:
+    with vd.load_array(path, chunks=chunks) as actual:
         if chunks is None:
             assert actual.chunks is None
         else:
@@ -239,7 +239,7 @@ def test_zarr_numpy_attrs_and_unsupported_objects(sample_voxeldata_3d, tmp_path)
     path = tmp_path / "attrs.zarr"
     with pytest.warns(UserWarning, match="Dropping.*unsupported"):
         vd.save(source, path)
-    with vd.load(path, chunks=None) as actual:
+    with vd.load_array(path, chunks=None) as actual:
         assert actual.attrs["nested"] == {"array": [0, 1, 2], "scalar": 4}
         assert actual.k.attrs["steps"] == [1, 2]
         assert "unsupported" not in actual.attrs
@@ -253,7 +253,7 @@ def test_extensions(sample_voxeldata_3d, tmp_path, suffix):
     """All documented suffixes dispatch to their backend."""
     path = tmp_path / f"data{suffix}"
     vd.save(sample_voxeldata_3d, path)
-    with vd.load(path, chunks=None) as actual:
+    with vd.load_array(path, chunks=None) as actual:
         assert_array_equal(actual, sample_voxeldata_3d)
 
 
@@ -274,7 +274,7 @@ def test_incremental_zarr_writes_rejected(sample_voxeldata_3d, tmp_path, options
     changed = sample_voxeldata_3d.vd.set_voxel_to_world(np.eye(4))
     with pytest.raises(ValueError, match="Incremental Zarr writes"):
         vd.save(changed, path, **options)
-    with vd.load(path) as actual:
+    with vd.load_array(path) as actual:
         xr.testing.assert_identical(actual, sample_voxeldata_3d)
 
 
@@ -283,7 +283,7 @@ def test_invalid_inputs(plain_volume, tmp_path):
     with pytest.raises(ValueError, match="Unsupported file extension"):
         vd.save(plain_volume, tmp_path / "data.nii")
     with pytest.raises(ValueError, match="Unsupported file extension"):
-        vd.load(tmp_path / "data.nii")
+        vd.load_array(tmp_path / "data.nii")
     with pytest.raises(ValueError, match="VoxelToWorldIndex"):
         vd.save(plain_volume, tmp_path / "plain.zarr")
     assert not (tmp_path / "plain.zarr").exists()
@@ -300,7 +300,7 @@ def test_foreign_store_rejected(plain_volume, store):
         {"consolidated": False} if path.suffix == ".zarr" else {}
     )
     with pytest.raises(ValueError, match="Missing attrs"):
-        vd.load(path, chunks=None, **load_options)
+        vd.load_array(path, chunks=None, **load_options)
 
 
 def test_variable_selection(sample_voxeldata_3d, store):
@@ -320,10 +320,10 @@ def test_variable_selection(sample_voxeldata_3d, store):
         {"consolidated": False} if path.suffix == ".zarr" else {}
     )
     with pytest.raises(ValueError, match="Specify variable"):
-        vd.load(path, chunks=None, **load_options)
+        vd.load_array(path, chunks=None, **load_options)
     with pytest.raises(KeyError):
-        vd.load(path, variable="missing", chunks=None, **load_options)
-    with vd.load(path, variable="other", chunks=None, **load_options) as actual:
+        vd.load_array(path, variable="missing", chunks=None, **load_options)
+    with vd.load_array(path, variable="other", chunks=None, **load_options) as actual:
         assert_array_equal(actual, sample_voxeldata_3d + 100)
 
 
@@ -350,4 +350,4 @@ def test_invalid_geometry_metadata(
     dataset["intensity"].attrs[f"voxel_to_world_{key}"] = value
     dataset.to_netcdf(path)
     with pytest.raises(error, match=message):
-        vd.load(path)
+        vd.load_array(path)

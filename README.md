@@ -117,7 +117,7 @@ restores scalar-selected spatial dimensions, but does not restore selected nonsp
 | Affine operations | `apply_affine`, `reindex_voxels`, `reindex_voxels_like`, `get_bounding_box`, `get_relative_affine` |
 | Named affines | `data.vd.get_affine`, `set_affine`, `remove_affine`, `apply`, `to` |
 | Extraction | `extract_with_mask`, `extract_with_labels`, `unmask` |
-| Persistence | `load`, `save` |
+| Persistence | `save`, `load_array`, `load_dataset`, `load_tree` |
 | Masks and labels | `ensure_mask`, `validate_mask`, `ensure_labels`, `validate_labels`, `check_spatial_alignment` |
 
 The `VoxelToWorldIndex` and `VoxelToWorldTransform` classes implement the xarray
@@ -153,7 +153,7 @@ Install `voxeldata[io]` for Zarr and NetCDF persistence:
 
 ```python
 vd.save(data, "volume.zarr")  # Or "volume.nc" for NetCDF.
-with vd.load("volume.zarr") as restored:
+with vd.load_array("volume.zarr") as restored:
     volume = restored.compute()
 ```
 
@@ -163,6 +163,27 @@ Loading uses storage-aligned Dask chunks when Dask is installed (for example via
 `voxeldata[lazy]`), and backend lazy indexing otherwise. Pass `chunks=None` to opt
 out of Dask. NetCDF overwrites existing files by default, following Xarray. See the
 [persistence guide](docs/api/io.md) for metadata restrictions and writer options.
+
+Zarr also supports **VoxelData datasets**: ordinary Xarray Datasets containing
+spatial VoxelData variables on one shared grid, plus optional nonspatial variables.
+A **VoxelData tree** is an ordinary DataTree with these datasets at spatial leaves;
+grouping ancestors carry no spatial coordinates. Different leaves may use different
+grids. Variable names, diagnostics, and group names remain consumer-defined.
+
+```python
+import xarray as xr
+
+results = xr.Dataset({"image": data, "valid": data > 0})
+vd.save(results, "results.zarr", compute=False).compute()
+with vd.load_dataset("results.zarr") as restored:
+    vd.validate_voxeldata(restored["image"])  # Direct selection retains geometry.
+
+# For multiple grids, save a DataTree and restore it with vd.load_tree(...).
+```
+
+Each container save uses one shared Dask write graph. Keep shared outputs in one
+container rather than making separate saves. Container I/O is Zarr-only.
+Xarray 2026.9.0 or newer is required.
 
 ## Relationship to ConfUSIus
 

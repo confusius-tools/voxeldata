@@ -20,6 +20,11 @@ the tested ConfUSIus integration.
   preserving geometry dependencies, units, native labels, timestamps, and named
   frames without storing dense world coordinates. Storage backends use the
   optional `io` extra; loading also works without Dask.
+- Zarr container persistence is implemented for VoxelData `0.0.6`: datasets share
+  one spatial grid, while spatial tree leaves may use different grids. One shared
+  writer preserves common Dask tasks across spatial outputs and diagnostics.
+  Explicit loaders are `load_array`, `load_dataset`, and `load_tree`; the former
+  `load` entry point is removed. Xarray `2026.9.0` or newer is required.
 - ConfUSIus [draft PR #569](https://github.com/confusius-tools/confusius/pull/569)
   delegates geometry, extraction, and ordinary Zarr array persistence to
   VoxelData. Probe positions use `pose`;
@@ -31,7 +36,6 @@ API contracts and usage belong in the README and `docs/api/`.
 
 ## Deferred downstream adoption
 
-- Publish VoxelData `0.0.5` with persistence support.
 - Update ConfUSIus's minimum dependency and lockfile to VoxelData `0.0.5`.
 - Resolve the ConfUSIus integration draft's conflicts with its target branch.
 - Validate the updated branch against the published dependency, including the

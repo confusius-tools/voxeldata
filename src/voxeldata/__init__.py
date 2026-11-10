@@ -37,7 +37,7 @@ from voxeldata.geometry import (
     require_single_geometry_affine,
     restore_voxel_to_world_index,
 )
-from voxeldata.io import load, save
+from voxeldata.io import load_array, load_dataset, load_tree, save
 from voxeldata.masks import (
     check_mask_dtype,
     check_spatial_alignment,
@@ -87,7 +87,9 @@ __all__ = [
     "get_voxel_to_world_units",
     "has_axis_aligned_voxel_to_world_index",
     "has_voxel_to_world_index",
-    "load",
+    "load_array",
+    "load_dataset",
+    "load_tree",
     "reindex_voxels",
     "reindex_voxels_like",
     "require_dataarray",

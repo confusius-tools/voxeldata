@@ -1806,7 +1806,7 @@ wheels = [
 
 [[package]]
 name = "voxeldata"
-version = "0.0.5"
+version = "0.0.6"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -1861,7 +1861,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.3.4" },
     { name = "pandas", specifier = ">=2.2.0" },
     { name = "voxeldata", extras = ["accel", "lazy", "io"], marker = "extra == 'all'" },
-    { name = "xarray", specifier = ">=2025.1.0" },
+    { name = "xarray", specifier = ">=2026.9.0" },
     { name = "zarr", marker = "extra == 'io'", specifier = ">=3.1.0" },
 ]
 provides-extras = ["accel", "lazy", "io", "all"]
