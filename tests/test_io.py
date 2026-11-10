@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 import xarray as xr
 from dask import delayed
+from dask.callbacks import Callback
 from numpy.testing import assert_allclose, assert_array_equal
 
 import voxeldata as vd
@@ -179,6 +180,54 @@ def test_lazy_load_and_deferred_save(sample_voxeldata_3d, store):
     with vd.load(path, chunks={}) as actual:
         assert isinstance(actual.data, da.Array)
         assert_array_equal(actual.compute(), np.arange(24).reshape(2, 3, 4))
+
+
+@pytest.mark.parametrize("dask_available", [False, True])
+def test_default_loading_uses_available_backend(
+    sample_voxeldata_3d, store, monkeypatch, dask_available
+):
+    """Default loading uses storage chunks with Dask, or backend indexing without it."""
+    path, options = store
+    encoding_key = "chunks" if path.suffix == ".zarr" else "chunksizes"
+    vd.save(
+        sample_voxeldata_3d,
+        path,
+        encoding={"intensity": {encoding_key: (1, 3, 4)}},
+        **options,
+    )
+    if not dask_available:
+        monkeypatch.setattr("voxeldata.io.find_spec", lambda name: None)
+    tasks = []
+    with Callback(pretask=lambda *args: tasks.append(args)):
+        actual = vd.load(path)
+    with actual:
+        assert tasks == []
+        if dask_available:
+            assert isinstance(actual.data, da.Array)
+            assert actual.chunks == ((1, 1), (3,), (4,))
+        else:
+            assert actual.chunks is None
+        assert_array_equal(actual.isel(k=1), sample_voxeldata_3d.isel(k=1))
+
+
+@pytest.mark.parametrize("chunks", [None, {"k": 2}])
+def test_explicit_loading_chunks_are_preserved(sample_voxeldata_3d, store, chunks):
+    """Explicit chunks opt out of Dask or override automatic storage chunking."""
+    path, options = store
+    encoding_key = "chunks" if path.suffix == ".zarr" else "chunksizes"
+    vd.save(
+        sample_voxeldata_3d,
+        path,
+        encoding={"intensity": {encoding_key: (1, 3, 4)}},
+        **options,
+    )
+    with vd.load(path, chunks=chunks) as actual:
+        if chunks is None:
+            assert actual.chunks is None
+        else:
+            assert isinstance(actual.data, da.Array)
+            assert actual.chunks == ((2,), (3,), (4,))
+        assert_array_equal(actual, sample_voxeldata_3d)
 
 
 def test_zarr_numpy_attrs_and_unsupported_objects(sample_voxeldata_3d, tmp_path):

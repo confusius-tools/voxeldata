@@ -1,4 +1,4 @@
-"""Masked voxel reconstruction, adapted from ConfUSIus (see NOTICE)."""
+"""Masked voxel reconstruction."""
 
 import numpy as np
 import xarray as xr

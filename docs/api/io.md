@@ -58,11 +58,14 @@ modality-specific objects are reconstructed.
 
 ## Loading, chunking, and writing options
 
-`load` defaults to backend lazy indexing with `chunks=None`, so `voxeldata[io]`
-works without Dask. For Dask-backed loading, also install `voxeldata[lazy]` and use
-`chunks={}` or an explicit chunk mapping. Geometry/coordinate validation may read
-coordinates, but does not compute signal data. Close loaded arrays when done, or
-use a context manager as above.
+`load` uses storage-aligned Dask chunks (`chunks={}`) by default when Dask is
+installed, for example through `voxeldata[lazy]`. Without Dask, it uses backend lazy
+indexing, so `voxeldata[io]` still works on its own. Pass `chunks=None` to disable
+Dask explicitly, or a chunk mapping to override storage chunking. Backend lazy
+indexing defers reads until values are needed, but does not defer arithmetic as
+Dask does. Geometry/coordinate validation may read coordinates, but does not
+compute signal data. Close loaded arrays when done, or use a context manager as
+above.
 
 Additional options pass through to Xarray, including `engine`, `group`, encoding,
 and chunking options where supported. `save(..., compute=False)` returns Xarray's

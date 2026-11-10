@@ -1,4 +1,4 @@
-"""Affine and bounding-box regressions adapted from ConfUSIus's xarray tests."""
+"""Affine and bounding-box regressions."""
 
 import numpy as np
 import pytest

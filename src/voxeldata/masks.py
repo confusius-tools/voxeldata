@@ -1,7 +1,4 @@
-"""Generic mask, label, and spatial-alignment validation.
-
-Adapted from ConfUSIus; see NOTICE in the project root.
-"""
+"""Generic mask, label, and spatial-alignment validation."""
 
 import numpy as np
 import xarray as xr

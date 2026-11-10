@@ -1,4 +1,4 @@
-"""Extraction using binary masks, adapted from ConfUSIus (see NOTICE)."""
+"""Extraction using binary masks."""
 
 import xarray as xr
 

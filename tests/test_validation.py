@@ -1,4 +1,4 @@
-"""Modality-independent validation regressions adapted from ConfUSIus.
+"""Modality-independent validation regressions.
 
 Probe timing metadata, slice acquisition timing, and fUSI signal attributes are
 intentionally excluded from the standalone data model.

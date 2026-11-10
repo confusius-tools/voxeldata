@@ -159,14 +159,15 @@ with vd.load("volume.zarr") as restored:
 
 Both formats restore the spatial index, ordered geometry dependencies, units,
 native voxel labels, and named frames without storing dense world coordinates.
-Loading works without Dask; use `chunks={}` with `voxeldata[lazy]` for Dask-backed
-arrays. NetCDF overwrites existing files by default, following Xarray. See the
+Loading uses storage-aligned Dask chunks when Dask is installed (for example via
+`voxeldata[lazy]`), and backend lazy indexing otherwise. Pass `chunks=None` to opt
+out of Dask. NetCDF overwrites existing files by default, following Xarray. See the
 [persistence guide](docs/api/io.md) for metadata restrictions and writer options.
 
 ## Relationship to ConfUSIus
 
-VoxelData is extracted from [ConfUSIus](https://github.com/confusius-tools/confusius),
-which uses it for functional ultrasound imaging data. The model itself makes no
+VoxelData and [ConfUSIus](https://github.com/confusius-tools/confusius) are sister
+projects. ConfUSIus uses VoxelData for functional ultrasound imaging data. The model itself makes no
 assumption about modality, acquisition hardware, or signal semantics, so it is
 usable by any package working with spatially referenced voxel data.
 
@@ -183,4 +184,4 @@ just docs          # build documentation
 
 ## License
 
-BSD-3-Clause. Portions derived from ConfUSIus; see `NOTICE`.
+BSD-3-Clause. See `LICENSE` and `NOTICE`.

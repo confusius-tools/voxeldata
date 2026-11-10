@@ -1,7 +1,7 @@
 """Small, function-scoped geometry fixtures shared by the public API tests.
 
-Adapted from ConfUSIus's unit fixtures. Distinct sample values make incorrect
-selection or reordering visible; each test gets fresh mutable arrays.
+Distinct sample values make incorrect selection or reordering visible; each test
+gets fresh mutable arrays.
 """
 
 from collections.abc import Iterator
@@ -47,7 +47,7 @@ def voxel_affine() -> np.ndarray:
 
 @pytest.fixture
 def oblique_affine() -> np.ndarray:
-    """Return the sheared affine used by ConfUSIus's oblique-volume fixture.
+    """Return a sheared affine for oblique volumes.
 
     Returns
     -------
@@ -225,7 +225,7 @@ def sample_voxeldata_view_time(sample_voxeldata_views: xr.DataArray) -> xr.DataA
 
 @pytest.fixture
 def sample_voxeldata_irregular(plain_volume: xr.DataArray) -> xr.DataArray:
-    """Return ConfUSIus's irregular voxel-label selection fixture.
+    """Return an irregular voxel-label selection fixture.
 
     Parameters
     ----------

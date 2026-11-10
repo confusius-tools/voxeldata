@@ -1,11 +1,8 @@
-"""Zarr and NetCDF persistence for VoxelData arrays.
-
-Portions of this file are derived from ConfUSIus, which is licensed under the
-BSD-3-Clause License. See `NOTICE` file for details.
-"""
+"""Zarr and NetCDF persistence for VoxelData arrays."""
 
 import json
 import warnings
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Literal
 
@@ -201,8 +198,10 @@ def load(path: str | Path, variable: str | None = None, **kwargs: Any) -> xr.Dat
         variables; a single variable is selected automatically.
     **kwargs : Any
         Arguments forwarded to `xarray.open_zarr` or `xarray.open_dataset`,
-        including `chunks` and `engine`. The default `chunks=None` uses backend
-        lazy indexing without Dask; pass `chunks={}` for Dask-backed arrays.
+        including `chunks` and `engine`. By default, use storage-aligned Dask
+        chunks (`chunks={}`) when Dask is installed, or backend lazy indexing
+        otherwise. Pass `chunks=None` to disable Dask or a chunk mapping to
+        override storage chunking.
 
     Returns
     -------
@@ -229,7 +228,8 @@ def load(path: str | Path, variable: str | None = None, **kwargs: Any) -> xr.Dat
     open them with Xarray and construct their geometry explicitly instead.
     """
     storage_format = _get_format(path)
-    kwargs.setdefault("chunks", None)
+    if "chunks" not in kwargs:
+        kwargs["chunks"] = {} if find_spec("dask") is not None else None
     dataset = (
         xr.open_zarr(path, **kwargs)
         if storage_format == "zarr"

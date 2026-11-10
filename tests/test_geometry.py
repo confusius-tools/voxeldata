@@ -1,8 +1,4 @@
-"""Geometry regressions adapted from ConfUSIus's test_utils/test_geometry.py.
-
-Only public behavior is exercised: world lookup, slicing, alignment, and affine
-validation. ConfUSIus-specific helpers and implementation-only checks stay upstream.
-"""
+"""Public geometry regressions for world lookup, slicing, alignment, and affines."""
 
 import numpy as np
 import pytest

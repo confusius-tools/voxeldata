@@ -1,4 +1,4 @@
-"""Generic voxel extraction and reconstruction, adapted from ConfUSIus (see NOTICE)."""
+"""Generic voxel extraction and reconstruction."""
 
 from voxeldata.extract.labels import extract_with_labels
 from voxeldata.extract.mask import extract_with_mask

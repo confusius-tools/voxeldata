@@ -1,4 +1,4 @@
-"""Constructor cases adapted from ConfUSIus, excluding probe-specific defaults."""
+"""Constructor cases for modality-independent voxel data."""
 
 from typing import Any
 

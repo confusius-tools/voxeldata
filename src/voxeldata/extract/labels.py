@@ -1,4 +1,4 @@
-"""Region aggregation, adapted from ConfUSIus (see NOTICE)."""
+"""Region aggregation."""
 
 from collections.abc import Hashable
 from typing import Literal

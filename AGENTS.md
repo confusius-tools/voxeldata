@@ -5,7 +5,7 @@ This file guides AI coding agents working in this repository.
 ## What is VoxelData
 
 VoxelData is a modality-independent model for spatially referenced
-`xarray.DataArray` objects, extracted from ConfUSIus. It owns generic geometry,
+`xarray.DataArray` objects and a sister project of ConfUSIus. It owns generic geometry,
 validation, extraction, and reconstruction—not probe hardware, acquisition
 policies, slice-timing correction, or modality-specific analysis.
 

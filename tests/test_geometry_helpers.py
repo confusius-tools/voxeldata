@@ -1,8 +1,6 @@
 """Public geometry helper contracts, independent of acquisition semantics.
 
 These regressions are maintained here rather than in downstream re-export tests.
-Portions of this file are derived from ConfUSIus, which is licensed under the
-BSD-3-Clause License. See `NOTICE` file for details.
 """
 
 import numpy as np
