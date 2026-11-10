@@ -102,16 +102,15 @@ attributes on the signal variable describe the index:
 | `voxel_to_world_geometry_dims` | Ordered geometry dimension names; empty for shared geometry |
 | `voxel_to_world_named_affines` | Frame name to shared matrix or full geometry-shaped stack |
 
-Zarr uses JSON-native lists and dictionaries, matching the ConfUSIus VoxelData
-integration's layout. NetCDF stores the matrix, dimension names, and frame mapping
-as JSON strings because its attributes cannot represent these nested structures.
-The units remain a plain string in both formats. Loading consumes the reserved
-attributes and reconstructs the index; frames live on the index, not in
+Zarr uses JSON-native lists and dictionaries. NetCDF stores the matrix, dimension names,
+and frame mapping as JSON strings because its attributes cannot represent these nested
+structures. The units remain a plain string in both formats. Loading consumes the
+reserved attributes and reconstructs the index; frames live on the index, not in
 `attrs["affines"]`. Any legacy `attrs["affines"]` is ordinary metadata and is never
-interpreted as named frames. Containers reuse the same per-spatial-variable
-metadata, with no dense world coordinates. The reserved root attribute
-`__voxeldata_tree_name__` preserves a tree's root name and is consumed by
-`load_tree`; ordinary node names are Zarr group names.
+interpreted as named frames. Containers reuse the same per-spatial-variable metadata,
+with no dense world coordinates. The reserved root attribute `__voxeldata_tree_name__`
+preserves a tree's root name and is consumed by `load_tree`; ordinary node names are
+Zarr group names.
 
 User attributes follow backend restrictions. For Zarr, NumPy values are converted
 to Python containers, and unsupported objects are dropped with a warning (also for
@@ -140,11 +139,9 @@ Zarr writes (`append_dim`, `region`, or modes `a`, `a-`, `r+`) are rejected beca
 they would not merge affine stacks and named frames correctly. Save the complete
 array instead.
 
-Loading an array from a dataset with multiple variables requires
-`load_array(..., variable="name")`.
-Files without voxel-to-world metadata are rejected; open foreign data with Xarray
-and construct VoxelData explicitly. NIfTI and acquisition-specific loaders remain
-in ConfUSIus.
+Loading an array from a dataset with multiple variables requires `load_array(...,
+variable="name")`. Files without voxel-to-world metadata are rejected; open foreign data
+with Xarray and construct VoxelData explicitly.
 
 ## Shared execution and limits
 

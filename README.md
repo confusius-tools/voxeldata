@@ -187,10 +187,10 @@ Xarray 2026.9.0 or newer is required.
 
 ## Relationship to ConfUSIus
 
-VoxelData and [ConfUSIus](https://github.com/confusius-tools/confusius) are sister
-projects. ConfUSIus uses VoxelData for functional ultrasound imaging data. The model itself makes no
-assumption about modality, acquisition hardware, or signal semantics, so it is
-usable by any package working with spatially referenced voxel data.
+VoxelData was originally developed as
+[ConfUSIus'](https://github.com/confusius-tools/confusius) data model. It is now a
+standalone package and offers a general-purpose voxel data model for any spatially
+referenced array.
 
 ## Development
 

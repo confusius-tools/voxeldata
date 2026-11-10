@@ -50,7 +50,6 @@ data = data.assign_coords(
 
 VoxelData does not reserve or interpret `slice_time`: its dimensions, acquisition
 windows, and correction rules belong to the consumer. Generic creation/validation
-does not infer acquisition reference or duration metadata. ConfUSIus retains its
-own acquisition defaults and slice-timing validation.
+does not infer acquisition reference or duration metadata.
 
 ::: voxeldata.create

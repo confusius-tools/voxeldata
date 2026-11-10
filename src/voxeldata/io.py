@@ -234,12 +234,6 @@ def load_array(
         If the requested variable is absent.
     ImportError
         If the chosen storage backend is not installed.
-
-    Notes
-    -----
-    Zarr metadata written by the ConfUSIus VoxelData integration is also accepted.
-    Arbitrary Xarray files without voxel-to-world metadata are not VoxelData;
-    open them with Xarray and construct their geometry explicitly instead.
     """
     storage_format = _get_format(path)
     if "chunks" not in kwargs:
