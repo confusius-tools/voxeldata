@@ -43,10 +43,9 @@ API details belong in `docs/api/` and the README; planned work belongs in
   Mutators default to `inplace=False`; `inplace=True` returns the updated original.
   `.vd.origin`/`.vd.spacing` include all dimensions; direction, bounds, scalings,
   and voxel-to-world matrices describe spatial geometry.
-- Named frames live on `VoxelToWorldIndex.named_affines`, never `attrs["affines"]`;
-  that attribute is ignored, not migrated or mirrored. Frames are finite,
-  homogeneous world-frame `(4, 4)` matrices or full geometry-shaped stacks.
-  Named frames need not share scales; index equality remains geometry-only.
+- Named frames live on `VoxelToWorldIndex.named_affines`. Frames are finite, homogeneous
+  world-frame `(4, 4)` matrices or full geometry-shaped stacks. Named frames need not
+  share scales; index equality remains geometry-only.
 - Applying a frame re-expresses other frames as `frame @ inv(action)`, aligned by
   dependency names, and stores an exact shared identity for the applied name.
   `set_voxel_to_world` drops frames with a warning unless explicitly supplied;

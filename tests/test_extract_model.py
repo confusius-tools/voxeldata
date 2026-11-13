@@ -227,6 +227,6 @@ def test_scalar_signal_rejected(make_sample_voxeldata_mask):
 
 
 def test_spatial_units_checked(sample_voxeldata_3dt, make_sample_voxeldata_mask):
-    mask = make_sample_voxeldata_mask().vd.set_units("cm")
+    mask = make_sample_voxeldata_mask().vd.set_world_units("cm")
     with pytest.raises(ValueError, match="spatial units differ"):
         vd.extract_with_mask(sample_voxeldata_3dt, mask)

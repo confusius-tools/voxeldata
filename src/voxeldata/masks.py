@@ -56,7 +56,7 @@ def check_spatial_alignment(
         if shared:
             arrays[position] = array.isel(dict.fromkeys(shared, 0))
     spatial_da, data = arrays
-    if spatial_da.vd.units != data.vd.units:
+    if spatial_da.vd.world_units != data.vd.world_units:
         raise ValueError(
             f"{name} does not share data's voxel grid: spatial units differ."
         )

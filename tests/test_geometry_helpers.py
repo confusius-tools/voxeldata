@@ -8,13 +8,14 @@ import pytest
 import xarray as xr
 from numpy.testing import assert_allclose
 
+import voxeldata as vd
 from voxeldata.geometry import (
     VoxelToWorldTransform,
     attach_voxel_to_world_index,
     get_affine_axis_scalings,
     get_affine_direction_matrix,
+    get_array_origin,
     get_voxel_to_world_affine,
-    get_voxel_to_world_index_origin,
     get_voxel_to_world_spacings_from_coords,
     get_voxel_to_world_spatial_dims,
     has_axis_aligned_voxel_to_world_index,
@@ -90,7 +91,7 @@ def test_get_world_spacings_returns_none_for_irregular_voxel_axes() -> None:
     assert spacing == {"k": 2.0, "j": 6.0, "i": None}
 
 
-def test_get_voxel_to_world_origin_uses_first_sampled_voxel() -> None:
+def test_get_array_origin_uses_first_sampled_voxel() -> None:
     """Voxel-to-world origin is the world location of array index zero."""
     data = xr.DataArray(
         np.zeros((2, 3, 4)),
@@ -113,7 +114,16 @@ def test_get_voxel_to_world_origin_uses_first_sampled_voxel() -> None:
         ),
     )
 
-    assert get_voxel_to_world_index_origin(data) == {"z": 30.0, "y": 35.0, "x": 430.0}
+    assert get_array_origin(data) == {"z": 30.0, "y": 35.0, "x": 430.0}
+
+
+def test_array_geometry_helpers_account_for_cropped_and_strided_labels(
+    sample_voxeldata_3d: xr.DataArray,
+) -> None:
+    """Array origin and spacing describe world sampling, not integer positions."""
+    data = sample_voxeldata_3d.isel(k=slice(1, 2), i=slice(None, None, -2))
+    assert vd.get_array_origin(data) == {"z": 11.0, "y": 20.0, "x": 39.0}
+    assert vd.get_array_spacing(data) == {"k": 1.0, "j": 2.0, "i": 6.0}
 
 
 def test_voxel_to_world_transform_rejects_invalid_construction() -> None:

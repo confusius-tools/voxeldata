@@ -1,7 +1,9 @@
 """Xarray accessor for affine transform operations."""
 
 import itertools
-from typing import TYPE_CHECKING
+import math
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Literal, TypeAlias
 
 import numpy as np
 import xarray as xr
@@ -10,6 +12,7 @@ from voxeldata._coordinates import get_representative_step
 from voxeldata._dims import VOXEL_DIMS, WORLD_DIMS
 from voxeldata.geometry import (
     attach_voxel_to_world_index,
+    get_array_origin,
     get_voxel_to_world_affine,
     get_voxel_to_world_index,
     get_voxel_to_world_spatial_dims,
@@ -29,12 +32,14 @@ def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
     The box encloses the full extent of every voxel, not just the voxel centers: the
     voxel-coordinate range of each `k`/`j`/`i` dim is extended by half a voxel at
     both ends before mapping through the voxel-to-world affine. The voxel size is
-    [`get_voxel_to_world_index_spacing`][voxeldata.geometry.get_voxel_to_world_index_spacing] (so a singleton dim spans
+    [`get_array_spacing`][voxeldata.geometry.get_array_spacing] (so a singleton dim spans
     one voxel, and irregular voxel coordinates are rejected). The result is exact for
     any affine, including oblique ones, without
     materializing the lazily derived world coordinates: each world coordinate is an
     affine function of the voxel coordinates, so its extremes over the grid are
-    attained at the corners of the (extended) voxel-coordinate box.
+    attained at the corners of the (extended) voxel-coordinate box. For stacked
+    geometry, the box encloses all grids. Select geometry dependencies first for
+    a grid-specific bounding box.
 
     Parameters
     ----------
@@ -48,8 +53,7 @@ def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
     (2, 3) xarray.DataArray
         Bounding box with dims `(bound, component)`, where `bound` is
         `["min", "max"]` and `component` is `["z", "y", "x"]`, and a `units` attr
-        from the voxel-to-world index. Geometry-dependent dimensions are prepended
-        in affine-axis order, giving one bounding box per geometry.
+        from the voxel-to-world index. The bounds enclose all geometries.
 
     Raises
     ------
@@ -102,23 +106,53 @@ def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
 
     # (*geometry_shape, 4, 4) @ (4, 8) broadcasts to one corner set per geometry.
     world_corners = (affine @ corners_h)[..., :-1, :]
-    bounds = np.stack([world_corners.min(axis=-1), world_corners.max(axis=-1)], axis=-2)
+    # Reduce every geometry axis and the corner axis, retaining world components.
+    axes = (*range(world_corners.ndim - 2), -1)
+    bounds = np.stack([world_corners.min(axis=axes), world_corners.max(axis=axes)])
 
     coords: dict[str, npt.ArrayLike] = {
         "bound": np.array(["min", "max"], dtype=np.str_),
         "component": np.array(WORLD_DIMS, dtype=np.str_),
     }
-    dims = ("bound", "component")
-    geometry_dims = _require_voxel_to_world_index(data).geometry_dims
-    dims = (*geometry_dims, *dims)
-    for dim in geometry_dims:
-        coords[dim] = _geometry_labels(data, dim)
     return xr.DataArray(
         bounds,
-        dims=dims,
+        dims=("bound", "component"),
         coords=coords,
         attrs={"units": get_voxel_to_world_units(data)},
     )
+
+
+TransformCenter: TypeAlias = (
+    Literal["origin", "geometry"]
+    | Sequence[float]
+    | Mapping[str, float]
+    | np.ndarray
+    | xr.DataArray
+)
+"""Transform pivot: a named point or an explicit world `(z, y, x)` point."""
+
+
+def get_geometry_center(data: xr.DataArray) -> xr.DataArray:
+    """Return the midpoint of the world-space box enclosing all grids.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        VoxelData array, including cropped or scalar-selected voxel dimensions.
+
+    Returns
+    -------
+    xarray.DataArray
+        A shared center with dimension `component`, components `z`, `y`, `x`,
+        and a `units` attribute. Select geometry dependencies first for a
+        grid-specific center.
+
+    Raises
+    ------
+    ValueError
+        If the array is invalid or voxel coordinates are irregular.
+    """
+    return get_bounding_box(data).mean("bound", keep_attrs=True)
 
 
 def get_relative_affine(
@@ -207,8 +241,7 @@ def apply_affine(
 
     The transform is composed into the DataArray's `VoxelToWorldIndex`, derived
     world coordinates are regenerated, and named affine frames on that index are
-    re-expressed against the new world frame. `attrs["affines"]` entries are
-    ignored entirely.
+    re-expressed against the new world frame.
 
     Parameters
     ----------
@@ -218,7 +251,7 @@ def apply_affine(
         Homogeneous world-space affine matrix to apply. If a string, it is looked up
         among the index's named affine frames.
     inplace : bool, default: False
-        Whether to modify the DataArray in-place.
+        Whether to modify the DataArray in-place, requiring all native voxel dims.
     geometry_dims : tuple[str, ...], optional
         Named batch axes of a NumPy action. Omitted stacked actions use the
         existing geometry dimensions; shared actions use `()`. Explicit axes
@@ -229,13 +262,14 @@ def apply_affine(
     xarray.DataArray
         `da` with updated spatial coordinates and updated named affine frames. No
         frame is removed: when `affine` is a string, that frame is kept as the
-        identity, since the world frame now is that named space.
+        identity, since the world frame now is that named space. Scalar-selected
+        voxel dimensions are restored unless modifying in place.
 
     Raises
     ------
     ValueError
-        If `da` lacks voxel-to-world geometry or if `affine`'s shape does not match
-        the DataArray's voxel-to-world affine.
+        If `da` lacks voxel-to-world geometry, if `affine` is invalid or has an
+        incompatible shape, or if in-place mutation would restore voxel dimensions.
     KeyError
         If `affine` is a string not present among the index's named affines.
 
@@ -252,6 +286,16 @@ def apply_affine(
     >>> float(result.coords["x"].isel(k=0, j=0, i=0))
     10.0
     """
+    from voxeldata.validation import ensure_voxeldata
+
+    _require_voxel_to_world_index(da)
+    # Restore scalar-selected axes before composing square homogeneous matrices.
+    if not set(VOXEL_DIMS) <= set(da.dims):
+        if inplace:
+            raise ValueError(
+                "inplace=True needs all native voxel dims; use inplace=False."
+            )
+        da = ensure_voxeldata(da)
     index = _require_voxel_to_world_index(da)
     applied_key = affine if isinstance(affine, str) else None
     if applied_key is not None:
@@ -322,6 +366,312 @@ def apply_affine(
         da.attrs.update(result.attrs)
         return da
     return result
+
+
+def _as_finite_array(
+    value: "npt.ArrayLike", name: str, shape: tuple[int, ...]
+) -> "npt.NDArray[np.float64]":
+    """Validate a real numeric array without accepting strings or booleans.
+
+    Parameters
+    ----------
+    value : numpy.typing.ArrayLike
+        Candidate values.
+    name : str
+        Argument name for errors.
+    shape : tuple[int, ...]
+        Required shape.
+
+    Returns
+    -------
+    numpy.ndarray
+        Finite float64 values.
+
+    Raises
+    ------
+    ValueError
+        If values are not finite real numbers of the required shape.
+    """
+    message = f"{name} must be finite real numbers with shape {shape}."
+    try:
+        array = np.asarray(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(message) from error
+    if (
+        array.dtype.kind not in "iuf"
+        or array.shape != shape
+        or not np.all(np.isfinite(array))
+    ):
+        raise ValueError(message)
+    return array.astype(np.float64)
+
+
+def apply_translation(
+    data: xr.DataArray, translation: "npt.ArrayLike", *, inplace: bool = False
+) -> xr.DataArray:
+    """Translate world geometry without resampling or changing voxel labels.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        VoxelData array to transform.
+    translation : (3,) array-like
+        Translation in world `(z, y, x)` order, in `data.vd.world_units`.
+    inplace : bool, default: False
+        Whether to modify the original array, requiring all native voxel dims.
+
+    Returns
+    -------
+    xarray.DataArray
+        Translated array, with named frames re-expressed in the new world frame.
+        Scalar-selected voxel dims are restored unless modifying in place.
+
+    Raises
+    ------
+    ValueError
+        If translation is not a finite real vector or geometry is invalid.
+    """
+    matrix = np.eye(4)
+    matrix[:3, 3] = _as_finite_array(translation, "translation", (3,))
+    return apply_affine(data, matrix, inplace=inplace)
+
+
+def _resolve_center(data: xr.DataArray, center: TransformCenter) -> np.ndarray:
+    """Resolve a shared world-space transform pivot.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        VoxelData array to transform.
+    center : TransformCenter
+        Named pivot, world vector, or mapping containing `z`, `y`, `x`.
+
+    Returns
+    -------
+    numpy.ndarray
+        World point of shape `(3,)`.
+
+    Raises
+    ------
+    ValueError
+        If the center is invalid, the requested geometry is undefined, or an
+        origin is requested before selecting all geometry dependencies.
+    """
+    if isinstance(center, Mapping):
+        missing = set(WORLD_DIMS) - center.keys()
+        if missing:
+            raise ValueError(
+                f"center mapping is missing world coordinates: {sorted(missing)}."
+            )
+        center = [center[dim] for dim in WORLD_DIMS]
+    if not isinstance(center, str):
+        return _as_finite_array(center, "center", (3,))
+    if center == "geometry":
+        return get_geometry_center(data).values
+    if center == "origin":
+        from voxeldata.validation import ensure_voxeldata
+
+        point = get_array_origin(ensure_voxeldata(data))
+        return np.array([point[dim] for dim in WORLD_DIMS])
+    raise ValueError("center must be 'origin', 'geometry' or a (3,) world point.")
+
+
+def _apply_linear_transform(
+    data: xr.DataArray, linear: np.ndarray, center: TransformCenter, inplace: bool
+) -> xr.DataArray:
+    """Apply a world linear transform about a shared pivot.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        VoxelData array to transform.
+    linear : (3, 3) numpy.ndarray
+        World-space linear action.
+    center : TransformCenter
+        Pivot specification.
+    inplace : bool
+        Whether to modify the original array.
+
+    Returns
+    -------
+    xarray.DataArray
+        Transformed array with preserved samples and re-expressed named frames.
+
+    Raises
+    ------
+    ValueError
+        If the pivot or geometry is invalid.
+    """
+    pivot = _resolve_center(data, center)
+    matrix = np.eye(4)
+    matrix[:3, :3] = linear
+    matrix[:3, 3] = pivot - linear @ pivot
+    return apply_affine(data, matrix, inplace=inplace)
+
+
+def apply_rotation(
+    data: xr.DataArray,
+    angle: "npt.ArrayLike",
+    axis: "str | npt.ArrayLike",
+    *,
+    center: TransformCenter = "geometry",
+    degrees: bool = True,
+    inplace: bool = False,
+) -> xr.DataArray:
+    """Rotate world geometry without resampling.
+
+    Rotations follow the right-hand rule in ordered world `(z, y, x)` coordinates:
+    +90 degrees about `x` maps `+z` onto `+y`.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        VoxelData array to transform.
+    angle : float or (N,) array-like
+        Angle, or one angle per axis name.
+    axis : str or (3,) array-like
+        World axis names, such as `"x"` or `"zyx"`, or a nonzero world vector.
+        Names rotate left to right about fixed world axes and may repeat.
+    center : {"origin", "geometry"} or (3,) array-like or mapping, default: "geometry"
+        Shared pivot in world units. `"geometry"` is the midpoint of the box
+        enclosing all grids. `"origin"` is the first sampled voxel and requires
+        selecting all geometry dependencies first. An explicit `(z, y, x)` point
+        or mapping with `z`, `y`, `x` keys also gives a shared pivot. Extra mapping
+        keys are ignored.
+    degrees : bool, default: True
+        Whether to interpret angles in degrees rather than radians.
+    inplace : bool, default: False
+        Whether to modify the original array, requiring all native voxel dims.
+
+    Returns
+    -------
+    xarray.DataArray
+        Rotated array with unchanged samples and labels, and re-expressed frames.
+        Scalar-selected voxel dims are restored unless modifying in place.
+
+    Raises
+    ------
+    ValueError
+        If angles, axes, center, or geometry are invalid. A geometry center
+        requires regular voxel coordinates.
+    """
+    unit_axes: np.ndarray
+    if isinstance(axis, str):
+        if not axis or not set(axis) <= set(WORLD_DIMS):
+            raise ValueError("axis must be one or more of 'z', 'y', 'x' or a vector.")
+        unit_axes = np.eye(3)[[WORLD_DIMS.index(name) for name in axis]]
+    else:
+        vector = _as_finite_array(axis, "axis", (3,))
+        norm = math.hypot(*vector)
+        if not 0 < norm < math.inf:
+            raise ValueError("axis must have a non-zero, finite length.")
+        unit_axes = vector[np.newaxis] / norm
+    angles = _as_finite_array(np.atleast_1d(angle), "angle", (len(unit_axes),))
+    if degrees:
+        angles = np.deg2rad(angles)
+    rotation = np.eye(3)
+    for index, theta in enumerate(angles):
+        a, b, c = unit_axes[index, 0], unit_axes[index, 1], unit_axes[index, 2]
+        # Rodrigues' formula keeps the runtime API independent of SciPy.
+        cross = np.array([[0, -c, b], [c, 0, -a], [-b, a, 0]])
+        step = np.eye(3) + np.sin(theta) * cross + (1 - np.cos(theta)) * (cross @ cross)
+        rotation = step @ rotation
+    return _apply_linear_transform(data, rotation, center, inplace)
+
+
+def apply_zoom(
+    data: xr.DataArray,
+    zoom: "npt.ArrayLike",
+    *,
+    center: TransformCenter = "geometry",
+    inplace: bool = False,
+) -> xr.DataArray:
+    """Rescale world geometry without resampling.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        VoxelData array to transform.
+    zoom : float or (3,) array-like
+        Nonzero finite scale factors in world `(z, y, x)` order. A scalar scales
+        every axis. Negative factors reflect; unequal factors can shear an oblique
+        voxel grid. Rotation and anisotropic zoom do not generally commute.
+    center : {"origin", "geometry"} or (3,) array-like or mapping, default: "geometry"
+        Shared pivot: the center of the box enclosing all grids, the first sampled
+        voxel (`"origin"`, requiring selection of all geometry dependencies), or
+        an explicit world point in `(z, y, x)` order. Mappings require `z`, `y`, `x`
+        keys; extra keys are ignored. Coordinates use `data.vd.world_units`.
+    inplace : bool, default: False
+        Whether to modify the original array, requiring all native voxel dims.
+
+    Returns
+    -------
+    xarray.DataArray
+        Rescaled array with unchanged samples and labels, and re-expressed frames.
+        Scalar-selected voxel dims are restored unless modifying in place.
+
+    Raises
+    ------
+    ValueError
+        If factors are zero or invalid, or center or geometry is invalid.
+        A geometry center requires regular voxel coordinates.
+    """
+    if np.ndim(zoom) == 0:
+        zoom = np.full(3, zoom)
+    factors = _as_finite_array(zoom, "zoom", (3,))
+    if np.any(factors == 0):
+        raise ValueError("zoom factors must be non-zero.")
+    return _apply_linear_transform(data, np.diag(factors), center, inplace)
+
+
+def apply_flip(
+    data: xr.DataArray,
+    axis: str,
+    *,
+    center: TransformCenter = "geometry",
+    inplace: bool = False,
+) -> xr.DataArray:
+    """Reflect world geometry without reversing or resampling the voxel array.
+
+    Parameters
+    ----------
+    data : xarray.DataArray
+        VoxelData array to transform.
+    axis : str
+        Distinct world axis names, such as `"x"` or `"yx"`. Order is irrelevant.
+    center : {"origin", "geometry"} or (3,) array-like or mapping, default: "geometry"
+        Shared pivot: the center of the box enclosing all grids, the first sampled
+        voxel (`"origin"`, requiring selection of all geometry dependencies), or
+        an explicit world point in `(z, y, x)` order. Mappings require `z`, `y`, `x`
+        keys; extra keys are ignored. Coordinates use `data.vd.world_units`.
+    inplace : bool, default: False
+        Whether to modify the original array, requiring all native voxel dims.
+
+    Returns
+    -------
+    xarray.DataArray
+        Reflected array with unchanged samples and labels, and re-expressed frames.
+        Scalar-selected voxel dims are restored unless modifying in place.
+
+    Raises
+    ------
+    ValueError
+        If axes are empty, repeated, or invalid, or center or geometry is invalid.
+        A geometry center requires regular voxel coordinates.
+    """
+    if (
+        not isinstance(axis, str)
+        or not axis
+        or not set(axis) <= set(WORLD_DIMS)
+        or len(set(axis)) != len(axis)
+    ):
+        raise ValueError("axis must contain distinct names among 'z', 'y', 'x'.")
+    return apply_zoom(
+        data,
+        [-1.0 if name in axis else 1.0 for name in WORLD_DIMS],
+        center=center,
+        inplace=inplace,
+    )
 
 
 def reindex_voxels(da: xr.DataArray) -> xr.DataArray:

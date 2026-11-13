@@ -109,10 +109,10 @@ def test_transpose_rename_copy_and_reconstruction(multigeometry_data):
         .copy(deep=True)
     )
     assert result.vd.geometry_dims == ("time", "angle")
-    result = result.vd.set_units("um")
+    result = result.vd.set_world_units("um")
     result = result.isel(j=1).vd.canonicalize()
     assert result.vd.geometry_dims == ("time", "angle")
-    assert result.vd.units == "um"
+    assert result.vd.world_units == "um"
     np.testing.assert_array_equal(
         result.vd.get_affine("lab"), data.vd.get_affine("lab")
     )
@@ -190,18 +190,24 @@ def test_bounds_and_reindex_without_dense_world_arrays(multigeometry_data):
         bounds = data.vd.bounding_box
         rebased = data.vd.reindex_voxels()
         restored = rebased.vd.reindex_voxels_like(data)
-    assert bounds.dims == ("time", "view", "bound", "component")
+    assert bounds.dims == ("bound", "component")
     corners = np.array(list(itertools.product([1, 5], [1.5, 10.5], [4, 12])))
+    all_world = []
     for t in range(3):
         for v in range(2):
             world = (
                 data.vd.index.voxel_to_world[t, v]
                 @ np.column_stack([corners, np.ones(8)]).T
             )[:3]
+            all_world.append(world)
+            selected = data.sel(time=data.time.values[t], view=data.view.values[v])
+            expected = np.stack([world.min(axis=1), world.max(axis=1)])
+            np.testing.assert_allclose(selected.vd.bounding_box, expected)
             np.testing.assert_allclose(
-                bounds.isel(time=t, view=v),
-                np.stack([world.min(axis=1), world.max(axis=1)]),
+                selected.vd.geometry_center, expected.mean(axis=0)
             )
+    world = np.concatenate(all_world, axis=1)
+    np.testing.assert_allclose(bounds, np.stack([world.min(axis=1), world.max(axis=1)]))
     np.testing.assert_allclose(
         rebased.vd.index.voxel_to_world[..., :3, 3],
         (data.vd.index.voxel_to_world @ [2, 3, 5, 1])[..., :3],
@@ -228,7 +234,7 @@ def test_variable_scalings_are_not_silently_taken_from_first_geometry(
     for property_name in ("origin", "direction"):
         with pytest.raises(ValueError, match="geometry dimensions"):
             getattr(data.vd, property_name)
-    assert data.vd.bounding_box.shape == (3, 2, 2, 3)
+    assert data.vd.bounding_box.shape == (2, 3)
     assert data.vd.reindex_voxels().vd.geometry_dims == ("time", "view")
 
 
@@ -332,7 +338,9 @@ def test_lazy_geometry_does_not_compute_signal_data():
         assert selected.vd.geometry_dims == ("time",)
         assert isinstance(selected.data, da.Array)
         assert selected.z.shape == (50, 2, 3, 2)
-        assert selected.vd.bounding_box.shape == (50, 2, 3)
+        np.testing.assert_allclose(
+            selected.vd.bounding_box, [[-0.5, -0.5, -1], [1.5, 2.5, 3]]
+        )
         assert isinstance(selected.vd.reindex_voxels().data, da.Array)
         assert selected.vd.apply(np.eye(4), inplace=True) is selected
         assert isinstance(selected.data, da.Array)

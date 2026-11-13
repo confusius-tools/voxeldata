@@ -372,7 +372,7 @@ def _serialize_array(
     """
     metadata = {
         "voxel_to_world": data.vd.voxel_to_world,
-        "voxel_to_world_units": data.vd.units,
+        "voxel_to_world_units": data.vd.world_units,
         "voxel_to_world_named_affines": data.vd.affines,
         "voxel_to_world_geometry_dims": data.vd.geometry_dims,
     }

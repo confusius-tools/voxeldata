@@ -61,7 +61,7 @@ def test_roundtrip(request, fixture, store):
         vd.validate_voxeldata(actual)
         xr.testing.assert_identical(actual, expected)
         assert actual.vd.geometry_dims == expected.vd.geometry_dims
-        assert actual.vd.units == expected.vd.units
+        assert actual.vd.world_units == expected.vd.world_units
         assert_allclose(actual.vd.voxel_to_world, expected.vd.voxel_to_world)
         assert actual.vd.affines.keys() == expected.vd.affines.keys()
         for name, frame in expected.vd.affines.items():
@@ -86,7 +86,7 @@ def test_ordered_dependencies_native_labels_and_world_coordinates(
     vd.save(source, path, **options)
     with vd.load_array(path, chunks=None) as actual:
         assert actual.vd.geometry_dims == ("view", "time")
-        assert actual.vd.units == "um"
+        assert actual.vd.world_units == "um"
         assert_allclose(actual.vd.voxel_to_world, affine)
         for name, frame in frames.items():
             assert_allclose(actual.vd.affines[name], frame)

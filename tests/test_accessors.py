@@ -11,7 +11,7 @@ def test_properties_expose_index_geometry(sample_voxeldata_3d: xr.DataArray) -> 
     data = sample_voxeldata_3d
     assert data.vd.voxel_dims == ("k", "j", "i")
     assert data.vd.world_dims == ("z", "y", "x")
-    assert data.vd.units == "mm"
+    assert data.vd.world_units == "mm"
     assert not data.vd.geometry_dims
     assert data.vd.is_axis_aligned
     assert data.vd.fixed_voxel_coords == {}
@@ -48,7 +48,7 @@ def test_set_voxel_to_world_on_plain_dataarray(plain_volume: xr.DataArray) -> No
     result = plain_volume.vd.set_voxel_to_world(
         np.diag([2.0, 3.0, 4.0, 1.0]), units="um"
     )
-    assert result.vd.units == "um"
+    assert result.vd.world_units == "um"
     assert result.vd.spacing == {"k": 2.0, "j": 3.0, "i": 4.0}
     assert not vd.has_voxel_to_world_index(plain_volume)
     np.testing.assert_array_equal(result.values, plain_volume.values)
@@ -162,18 +162,6 @@ def test_to_requires_frame_on_both_sides(
         source.vd.to(target, "lab")
 
 
-def test_attrs_affines_are_ignored_and_untouched(
-    sample_voxeldata_3d: xr.DataArray,
-) -> None:
-    data = sample_voxeldata_3d
-    data.attrs["affines"] = {"unindexed": np.eye(4)}
-    with pytest.raises(KeyError, match="unindexed"):
-        data.vd.apply("unindexed")
-    result = data.vd.apply(np.diag([2.0, 2.0, 2.0, 1.0]))
-    assert result.vd.affines == {}
-    np.testing.assert_array_equal(result.attrs["affines"]["unindexed"], np.eye(4))
-
-
 @pytest.mark.parametrize(
     "indexer, positions",
     [(0, [0]), (slice(1, 2), [1]), ([1, 0], [1, 0]), (np.array([1]), [1])],
@@ -269,7 +257,7 @@ def test_named_frames_may_have_different_scales_per_grid(
 
 
 @pytest.mark.parametrize("inplace", [False, True])
-def test_frame_mutators_and_units_preserve_geometry(
+def test_frame_mutators_and_world_units_preserve_geometry(
     sample_voxeldata_3d: xr.DataArray,
     named_affines: dict[str, np.ndarray],
     inplace: bool,
@@ -278,9 +266,10 @@ def test_frame_mutators_and_units_preserve_geometry(
     before = data.copy(deep=True)
     framed = data.vd.set_affine("lab", named_affines["lab"], inplace=inplace)
     assert (framed is data) is inplace
-    changed = framed.vd.set_units("um", inplace=inplace)
+    changed = framed.vd.set_world_units("um", inplace=inplace)
     assert (changed is framed) is inplace
-    assert changed.vd.units == "um"
+    assert changed.vd.world_units == "um"
+    assert changed.attrs["units"] == "a.u."
     np.testing.assert_array_equal(changed.vd.get_affine("lab"), named_affines["lab"])
     np.testing.assert_array_equal(changed.vd.voxel_to_world, before.vd.voxel_to_world)
     removed = changed.vd.remove_affine("lab", inplace=inplace)
@@ -288,7 +277,7 @@ def test_frame_mutators_and_units_preserve_geometry(
     assert removed.vd.affines == {}
     if not inplace:
         xr.testing.assert_identical(data, before)
-        assert framed.vd.units == "mm"
+        assert framed.vd.world_units == "mm"
         assert set(changed.vd.affines) == {"lab"}
 
 

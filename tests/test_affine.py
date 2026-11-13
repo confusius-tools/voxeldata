@@ -62,16 +62,24 @@ def test_irregular_bounds_are_rejected(
         vd.get_bounding_box(sample_voxeldata_irregular)
 
 
-def test_view_bounds_have_independent_expected_values(
+def test_view_bounds_enclose_all_grids_and_selection_recovers_individual_bounds(
     sample_voxeldata_views: xr.DataArray,
 ) -> None:
     bounds = sample_voxeldata_views.vd.bounding_box
-    assert bounds.dims == ("view", "bound", "component")
-    np.testing.assert_array_equal(bounds.coords["view"], [10, 20])
+    assert bounds.dims == ("bound", "component")
+    np.testing.assert_allclose(bounds, [[9.5, -1, 28.5], [111.5, 25, 45.5]])
     np.testing.assert_allclose(
-        bounds.values,
-        [[[9.5, 19, 28.5], [11.5, 25, 40.5]], [[109.5, -1, 33.5], [111.5, 5, 45.5]]],
+        sample_voxeldata_views.vd.geometry_center, [60.5, 12, 37]
     )
+    for label, expected in [
+        (10, [[9.5, 19, 28.5], [11.5, 25, 40.5]]),
+        (20, [[109.5, -1, 33.5], [111.5, 5, 45.5]]),
+    ]:
+        selected = sample_voxeldata_views.sel(view=label)
+        np.testing.assert_allclose(selected.vd.bounding_box, expected)
+        np.testing.assert_allclose(
+            selected.vd.geometry_center, np.mean(expected, axis=0)
+        )
 
 
 @pytest.mark.parametrize("fixture", ["sample_voxeldata_3d", "sample_voxeldata_views"])

@@ -105,6 +105,48 @@ Creation preserves the supplied nonspatial dimension order. For example, both
 dimensions and omitting absent `time` dimensions. Canonicalization also
 restores scalar-selected spatial dimensions, but does not restore selected nonspatial dimensions.
 
+`get_array_origin(data)` returns the world position of the first sampled voxel;
+`get_array_spacing(data)` returns physical step lengths along native voxel axes.
+Both account for retained voxel labels after cropping or striding. Unlike these
+spatial-only functions, `.vd.origin` and `.vd.spacing` include nonspatial dimensions.
+`.vd.world_units` and `.vd.set_world_units(...)` describe world-coordinate units,
+not signal-value or time units.
+
+## World-space transforms
+
+```python
+shifted = data.vd.translate((0, 0, 1.5))  # World (z, y, x), in data.vd.world_units.
+rotated = data.vd.rotate(90, "x")
+zoomed = data.vd.zoom((1, 2, 2))
+flipped = data.vd.flip("yx")
+center = data.vd.geometry_center
+```
+
+These operations change geometry only: they do not resample, reorder, or compute
+signal data. Native voxel labels and named frames are preserved (frames are
+re-expressed relative to the new world frame). They return a new array by default;
+`inplace=True` returns the updated original and requires all native voxel dimensions.
+
+Rotation, zoom, and flip default to `center="geometry"`, the midpoint of the
+bounding box **enclosing all grids**, so every geometry uses one shared pivot.
+`bounding_box` has dimensions `(bound, component)`; `geometry_center` has dimension
+`component`. Both carry a `units` attribute. Select geometry dependencies first for
+grid-specific values, e.g. `data.sel(view=20).vd.bounding_box` and
+`data.sel(view=20).vd.geometry_center`.
+
+`center="origin"` uses the first sampled voxel, including after cropping or
+reversing native labels, and requires selecting all geometry dependencies first.
+An explicit `center=(z, y, x)` or mapping with `z`, `y`, `x` keys also supplies a
+shared world pivot.
+
+Rotations follow the right-hand rule in ordered `(z, y, x)` coordinates: +90 degrees
+about `x` maps `+z` onto `+y`. Multiple axis names apply left to right about fixed
+world axes, e.g. `.vd.rotate((30, 20, 10), "zyx")`; use `degrees=False` for radians.
+Zoom factors act along world axes; negative factors reflect, and unequal factors
+can shear an oblique grid. A flip changes world geometry, not the sample order.
+Irregular voxel labels require an explicit or origin pivot rather than a geometry
+center. Scalar-selected voxel dimensions are restored in non-inplace results.
+
 ## Public API
 
 | Area | Functions |
@@ -112,9 +154,9 @@ restores scalar-selected spatial dimensions, but does not restore selected nonsp
 | Dimensions | `VOXEL_DIMS`, `WORLD_DIMS`, `TIME_DIM`, `CORE_DIMS` |
 | Construction | `create_voxeldata`, `attach_voxel_to_world_index` |
 | Accessor | `data.vd` ([`VoxelDataAccessor`](src/voxeldata/accessors.py)) |
-| Geometry | `get_voxel_to_world_affine`, `get_voxel_to_world_units`, `get_voxel_to_world_index_origin`, `get_voxel_to_world_index_spacing`, `get_voxel_to_world_direction_matrix`, `convert_length_units` |
+| Geometry | `get_voxel_to_world_affine`, `get_voxel_to_world_units`, `get_array_origin`, `get_array_spacing`, `get_voxel_to_world_direction_matrix`, `convert_length_units` |
 | Validation | `validate_voxeldata`, `ensure_voxeldata`, `canonicalize_voxeldata` |
-| Affine operations | `apply_affine`, `reindex_voxels`, `reindex_voxels_like`, `get_bounding_box`, `get_relative_affine` |
+| Affine operations | `apply_affine`, `apply_translation`, `apply_rotation`, `apply_zoom`, `apply_flip`, `get_geometry_center`, `reindex_voxels`, `reindex_voxels_like`, `get_bounding_box`, `get_relative_affine` |
 | Named affines | `data.vd.get_affine`, `set_affine`, `remove_affine`, `apply`, `to` |
 | Extraction | `extract_with_mask`, `extract_with_labels`, `unmask` |
 | Persistence | `save`, `load_array`, `load_dataset`, `load_tree` |

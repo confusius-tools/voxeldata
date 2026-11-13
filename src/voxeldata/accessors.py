@@ -8,15 +8,21 @@ is enough to make ``data.vd`` available.
 from __future__ import annotations
 
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import xarray as xr
 
 from voxeldata._coordinates import get_coordinate_origins, get_coordinate_spacing_info
 from voxeldata.affine import (
+    TransformCenter,
     apply_affine,
+    apply_flip,
+    apply_rotation,
+    apply_translation,
+    apply_zoom,
     get_bounding_box,
+    get_geometry_center,
     reindex_voxels,
     reindex_voxels_like,
 )
@@ -24,11 +30,11 @@ from voxeldata.geometry import (
     VoxelToWorldIndex,
     attach_voxel_to_world_index,
     get_affine_axis_scalings,
+    get_array_origin,
+    get_array_spacing,
     get_voxel_to_world_affine,
     get_voxel_to_world_direction_matrix,
     get_voxel_to_world_index,
-    get_voxel_to_world_index_origin,
-    get_voxel_to_world_index_spacing,
     get_voxel_to_world_spatial_dims,
     get_voxel_to_world_units,
     has_axis_aligned_voxel_to_world_index,
@@ -38,6 +44,9 @@ from voxeldata.validation import (
     ensure_voxeldata,
     validate_voxeldata,
 )
+
+if TYPE_CHECKING:
+    import numpy.typing as npt
 
 
 @xr.register_dataarray_accessor("vd")
@@ -126,7 +135,7 @@ class VoxelDataAccessor:
         return _require_index(self._obj).fixed_voxel_coords
 
     @property
-    def units(self) -> str:
+    def world_units(self) -> str:
         """Physical unit of the world coordinates.
 
         Returns
@@ -169,7 +178,7 @@ class VoxelDataAccessor:
                 for dim in self._obj.dims
                 if str(dim) not in voxel_dims
             },
-            **get_voxel_to_world_index_origin(self._obj),
+            **get_array_origin(self._obj),
         }
 
     @property
@@ -185,7 +194,7 @@ class VoxelDataAccessor:
             Spacing per dimension, or `None` when undefined or non-uniform.
         """
         _require_index(self._obj)
-        voxel_spacing = get_voxel_to_world_index_spacing(self._obj)
+        voxel_spacing = get_array_spacing(self._obj)
         regular_spacing = {
             str(dim): get_coordinate_spacing_info(str(dim), self._obj, 1e-2).value
             for dim in self._obj.dims
@@ -224,14 +233,27 @@ class VoxelDataAccessor:
 
     @property
     def bounding_box(self) -> xr.DataArray:
-        """World-space bounding box enclosing every voxel.
+        """World-space bounding box enclosing every voxel across all grids.
 
         Returns
         -------
         xarray.DataArray
-            Bounding-box bounds in world coordinates.
+            Bounds with dimensions `(bound, component)` and world units. Select
+            geometry dependencies first for grid-specific bounds.
         """
         return get_bounding_box(self._obj)
+
+    @property
+    def geometry_center(self) -> xr.DataArray:
+        """Midpoint of the world-space bounding box enclosing all grids.
+
+        Returns
+        -------
+        xarray.DataArray
+            Shared center with dimension `component` and world units. Select
+            geometry dependencies first for a grid-specific center.
+        """
+        return get_geometry_center(self._obj)
 
     @property
     def affines(self) -> dict[str, np.ndarray]:
@@ -382,7 +404,7 @@ class VoxelDataAccessor:
         )
         return _maybe_inplace(self._obj, result, inplace)
 
-    def set_units(self, units: str, *, inplace: bool = False) -> xr.DataArray:
+    def set_world_units(self, units: str, *, inplace: bool = False) -> xr.DataArray:
         """Change the world coordinate unit.
 
         Parameters
@@ -420,16 +442,122 @@ class VoxelDataAccessor:
             frames already carry their dependencies. New action dependencies
             are broadcast by name and added to the geometry.
         inplace : bool, default: False
-            Whether to modify the DataArray in-place.
+            Whether to modify the DataArray in-place, requiring all native voxel dims.
 
         Returns
         -------
         xarray.DataArray
             DataArray with updated world coordinates and named frames.
+            Scalar-selected voxel dims are restored unless modifying in place.
         """
         return apply_affine(
             self._obj, affine, inplace=inplace, geometry_dims=geometry_dims
         )
+
+    def translate(
+        self, translation: npt.ArrayLike, *, inplace: bool = False
+    ) -> xr.DataArray:
+        """Translate world geometry without resampling.
+
+        Parameters
+        ----------
+        translation : (3,) array-like
+            World `(z, y, x)` translation in `.vd.world_units`.
+        inplace : bool, default: False
+            Whether to modify the original array, requiring all native voxel dims.
+
+        Returns
+        -------
+        xarray.DataArray
+            Translated array. See [apply_translation][voxeldata.affine.apply_translation].
+        """
+        return apply_translation(self._obj, translation, inplace=inplace)
+
+    def rotate(
+        self,
+        angle: npt.ArrayLike,
+        axis: str | npt.ArrayLike,
+        *,
+        center: TransformCenter = "geometry",
+        degrees: bool = True,
+        inplace: bool = False,
+    ) -> xr.DataArray:
+        """Rotate world geometry without resampling.
+
+        Parameters
+        ----------
+        angle : float or (N,) array-like
+            Angle, or one angle per axis name.
+        axis : str or (3,) array-like
+            World names or vector in `(z, y, x)` order. Names rotate left to right
+            about fixed world axes, following the right-hand rule in this order.
+        center : {"origin", "geometry"} or (3,) array-like or mapping, default: "geometry"
+            Shared enclosing-box center or explicit world point in `(z, y, x)`
+            order (or a mapping with those keys). `"origin"` uses the first sampled
+            voxel and requires selecting all geometry dependencies first.
+        degrees : bool, default: True
+            Whether to interpret angles in degrees rather than radians.
+        inplace : bool, default: False
+            Whether to modify the original array, requiring all native voxel dims.
+
+        Returns
+        -------
+        xarray.DataArray
+            Rotated array. See [apply_rotation][voxeldata.affine.apply_rotation].
+        """
+        return apply_rotation(
+            self._obj, angle, axis, center=center, degrees=degrees, inplace=inplace
+        )
+
+    def zoom(
+        self,
+        zoom: npt.ArrayLike,
+        *,
+        center: TransformCenter = "geometry",
+        inplace: bool = False,
+    ) -> xr.DataArray:
+        """Rescale world geometry without resampling.
+
+        Parameters
+        ----------
+        zoom : float or (3,) array-like
+            Nonzero finite world scale factors. Negative values reflect.
+        center : {"origin", "geometry"} or (3,) array-like or mapping, default: "geometry"
+            Shared enclosing-box center or explicit world point in `(z, y, x)`
+            order (or a mapping with those keys). `"origin"` uses the first sampled
+            voxel and requires selecting all geometry dependencies first.
+        inplace : bool, default: False
+            Whether to modify the original array, requiring all native voxel dims.
+
+        Returns
+        -------
+        xarray.DataArray
+            Rescaled array. See [apply_zoom][voxeldata.affine.apply_zoom].
+        """
+        return apply_zoom(self._obj, zoom, center=center, inplace=inplace)
+
+    def flip(
+        self, axis: str, *, center: TransformCenter = "geometry", inplace: bool = False
+    ) -> xr.DataArray:
+        """Reflect world geometry without reversing the voxel array.
+
+        Parameters
+        ----------
+        axis : str
+            Distinct world axis names, such as `"x"` or `"yx"`.
+        center : {"origin", "geometry"} or (3,) array-like or mapping, default: "geometry"
+            Shared enclosing-box center or explicit world point in `(z, y, x)`
+            order (or a mapping with those keys). `"origin"` uses the first sampled
+            voxel and requires selecting all geometry dependencies first.
+        inplace : bool, default: False
+            Whether to modify the original array, requiring all native voxel dims.
+
+        Returns
+        -------
+        xarray.DataArray
+            Reflected array. See [apply_flip][voxeldata.affine.apply_flip].
+        """
+        return apply_flip(self._obj, axis, center=center, inplace=inplace)
 
     def reindex_voxels(self, *, inplace: bool = False) -> xr.DataArray:
         """Rebase voxel coordinates to dense positions.

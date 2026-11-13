@@ -85,7 +85,7 @@ def test_dataset_roundtrip(multigeometry_data, zarr_store, scalar_selection):
             xr.testing.assert_identical(actual[name], expected)
             assert actual[name].dtype == expected.dtype
             assert actual[name].vd.geometry_dims == expected.vd.geometry_dims
-            assert actual[name].vd.units == expected.vd.units
+            assert actual[name].vd.world_units == expected.vd.world_units
             assert_allclose(actual[name].vd.voxel_to_world, expected.vd.voxel_to_world)
             for frame, matrix in expected.vd.affines.items():
                 assert_allclose(actual[name].vd.affines[frame], matrix)
@@ -146,7 +146,7 @@ def test_tree_distinct_grids_and_empty_groups(
             expected = source[group][variable]
             assert isinstance(restored, xr.DataArray)
             vd.validate_voxeldata(restored)
-            assert restored.vd.units == expected.vd.units
+            assert restored.vd.world_units == expected.vd.world_units
             assert_allclose(restored.vd.voxel_to_world, expected.vd.voxel_to_world)
             for name, frame in expected.vd.affines.items():
                 assert_allclose(restored.vd.affines[name], frame)

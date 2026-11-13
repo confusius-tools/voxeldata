@@ -1687,7 +1687,7 @@ def require_single_geometry_affine(
     return affine
 
 
-def get_voxel_to_world_index_origin(data: xr.DataArray) -> dict[str, float]:
+def get_array_origin(data: xr.DataArray) -> dict[str, float]:
     """Return the world location of the first sampled voxel.
 
     Parameters
@@ -1726,8 +1726,8 @@ def get_voxel_to_world_index_origin(data: xr.DataArray) -> dict[str, float]:
     return {name: np.float64(origin[i]).item() for i, name in enumerate(WORLD_DIMS)}
 
 
-def get_voxel_to_world_index_spacing(data: xr.DataArray) -> dict[str, float | None]:
-    """Return world spacing per voxel-space axis for a VoxelData array.
+def get_array_spacing(data: xr.DataArray) -> dict[str, float | None]:
+    """Return physical spacing between adjacent array positions along voxel axes.
 
     Parameters
     ----------
@@ -1737,7 +1737,8 @@ def get_voxel_to_world_index_spacing(data: xr.DataArray) -> dict[str, float | No
     Returns
     -------
     dict[str, float | None]
-        World spacing keyed by voxel-space dimension.
+        World-space step lengths keyed by native voxel dimension. Retained voxel
+        labels account for striding; irregular labels have undefined spacing.
     """
     voxel_dims = get_voxel_to_world_spatial_dims(data)
     active_voxel_coords = {dim: data.coords[dim].values for dim in voxel_dims}
@@ -1757,7 +1758,7 @@ def get_voxel_to_world_direction_matrix(
     `da.isel(dim=slice(None, None, -1))`) -- dense array position always counts up
     from 0 regardless of the coordinate's own direction. This folds that sign in, so
     the returned direction matrix is expressed in dense-position terms: paired with
-    [get_voxel_to_world_index_spacing][voxeldata.geometry.get_voxel_to_world_index_spacing]
+    [get_array_spacing][voxeldata.geometry.get_array_spacing]
     (a magnitude) and origin, it reconstructs a position-space affine that correctly
     represents a flipped voxel dimension, as SimpleITK's own `(origin, spacing,
     direction)` grid convention expects.
