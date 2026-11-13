@@ -25,21 +25,13 @@ def test_properties_expose_index_geometry(sample_voxeldata_3d: xr.DataArray) -> 
     )
 
 
-def test_spacing_and_origin_cover_non_spatial_dims(
+def test_spacing_and_origin_exclude_nonspatial_dims(
     sample_voxeldata_3dt: xr.DataArray,
 ) -> None:
-    assert sample_voxeldata_3dt.vd.spacing == {
-        "time": 0.5,
-        "k": 1.0,
-        "j": 2.0,
-        "i": 3.0,
-    }
-    assert sample_voxeldata_3dt.vd.origin == {
-        "time": 10.0,
-        "z": 10.0,
-        "y": 20.0,
-        "x": 30.0,
-    }
+    data = sample_voxeldata_3dt.expand_dims(channel=["a", "b"], echo=2)
+    assert data.vd.spacing == {"k": 1.0, "j": 2.0, "i": 3.0}
+    assert data.vd.origin == {"z": 10.0, "y": 20.0, "x": 30.0}
+    assert data.vd.dt == 0.5
 
 
 def test_set_voxel_to_world_on_plain_dataarray(plain_volume: xr.DataArray) -> None:

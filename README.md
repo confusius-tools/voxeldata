@@ -107,10 +107,17 @@ restores scalar-selected spatial dimensions, but does not restore selected nonsp
 
 `get_array_origin(data)` returns the world position of the first sampled voxel;
 `get_array_spacing(data)` returns physical step lengths along native voxel axes.
-Both account for retained voxel labels after cropping or striding. Unlike these
-spatial-only functions, `.vd.origin` and `.vd.spacing` include nonspatial dimensions.
-`.vd.world_units` and `.vd.set_world_units(...)` describe world-coordinate units,
-not signal-value or time units.
+Both account for retained voxel labels after cropping or striding. `.vd.origin`
+and `.vd.spacing` expose the same spatial-only values, keyed by `z/y/x` and
+`k/j/i`, respectively. `.vd.world_units` and `.vd.set_world_units(...)` describe
+world-coordinate units, not signal-value or time units.
+
+Use `.vd.dt` for the time sampling interval, in the time coordinate's units
+(normally seconds). It returns `None` for irregular sampling or fewer than two
+timestamps; uniformity uses a 1% relative tolerance around the median interval.
+Select any additional timestamp dependencies first, even when their intervals
+agree. Missing time coordinates raise `ValueError`. For other dimensions, access
+their coordinates directly rather than treating them as spatial metadata.
 
 ## World-space transforms
 

@@ -18,6 +18,20 @@ data.vd.spacing         # {'k': 0.5, 'j': 0.1, 'i': 0.1}
 data.vd.apply("lab")    # apply a stored named frame
 ```
 
+`.vd.origin` returns only the spatial world position of the first sampled voxel
+(`z/y/x`), and `.vd.spacing` returns only physical sample spacing along active
+native voxel axes (`k/j/i`). Both account for cropping and striding. The spatial
+unit is `.vd.world_units`; these properties never include nonspatial coordinates.
+
+Use `.vd.dt` for the interval of a shared time coordinate, in its own units
+(normally seconds). It returns `None` for irregular sampling or fewer than two
+timestamps, including a scalar-selected time point. Uniformity uses a 1% relative
+tolerance around the median interval. Missing time coordinates and invalid
+(non-finite, non-real, or non-increasing) timestamps raise `ValueError`. Select
+all additional timestamp dependencies first, even when their sampling intervals
+agree. Geometry dependencies are independent and need not be selected for `dt`.
+For other dimensions, access coordinates directly.
+
 `set_voxel_to_world` is the only method that accepts a plain DataArray without an
 existing voxel-to-world index; every other property and method raises `ValueError`
 until geometry is attached.

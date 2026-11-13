@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import numpy.typing as npt
 import xarray as xr
@@ -163,39 +161,3 @@ def get_coordinate_spacing_info(
         )
 
     return CoordinateSpacingInfo(value=steps[0], median=steps[0], warn_msg=None)
-
-
-def get_coordinate_origins(data: xr.DataArray) -> dict[str, float]:
-    """Return the first coordinate value for each dimension.
-
-    For each dimension, returns the first coordinate value. If a coordinate is
-    missing, falls back to `0.0` with a warning. If a coordinate is non-numeric
-    (e.g. string-based), falls back to `0.0` without a warning.
-
-    Parameters
-    ----------
-    data : xarray.DataArray
-        DataArray whose coordinate origins to compute.
-
-    Returns
-    -------
-    dict[str, float]
-        Origin per dimension in DataArray dimension order.
-    """
-    result: dict[str, float] = {}
-    for dim in (str(d) for d in data.dims):
-        if dim not in data.coords:
-            warnings.warn(
-                f"Dimension '{dim}' has no coordinate; origin defaults to 0.0.",
-                stacklevel=2,
-            )
-            result[dim] = 0.0
-        else:
-            coord = data.coords[dim]
-            if not np.issubdtype(coord.dtype, np.integer) and not np.issubdtype(
-                coord.dtype, np.floating
-            ):
-                result[dim] = 0.0
-            else:
-                result[dim] = float(coord.values.flat[0])
-    return result

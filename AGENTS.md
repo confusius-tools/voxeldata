@@ -41,8 +41,10 @@ API details belong in `docs/api/` and the README; planned work belongs in
 
 - Keep the flat `.vd` accessor: no nested `.vd.affine` or `.voxeldata` alias.
   Mutators default to `inplace=False`; `inplace=True` returns the updated original.
-  `.vd.origin`/`.vd.spacing` include all dimensions; direction, bounds, scalings,
-  and voxel-to-world matrices describe spatial geometry.
+  `.vd.origin`/`.vd.spacing` describe only spatial geometry (`z/y/x` world origin
+  and `k/j/i` physical sample spacing). `.vd.dt` reports shared time sampling;
+  select additional timestamp dependencies first. `.vd.world_units` describes
+  world-coordinate units, not signal or time units.
 - Named frames live on `VoxelToWorldIndex.named_affines`. Frames are finite, homogeneous
   world-frame `(4, 4)` matrices or full geometry-shaped stacks. Named frames need not
   share scales; index equality remains geometry-only.

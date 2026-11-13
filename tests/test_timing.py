@@ -9,6 +9,55 @@ from dask import delayed
 import voxeldata as vd
 
 
+def test_dt_uses_shared_time_sampling_and_stride(sample_voxeldata_3dt):
+    data = sample_voxeldata_3dt
+    assert data.vd.dt == 0.5
+    assert data.isel(time=slice(None, None, 2), k=0).vd.dt == 1.0
+    assert data.isel(time=[0]).vd.dt is None
+    assert data.isel(time=0).vd.dt is None
+    assert data.assign_coords(time=[10.0, 10.5, 11.0, 12.0]).vd.dt is None
+
+
+@pytest.mark.parametrize(
+    "time,expected",
+    [
+        ([0, 1, 2.005, 3], 1.0),
+        ([0, 1, 2.03, 3], None),
+        ([0, 1e-10, 2e-10, 3e-10], 1e-10),
+        ([0, 1e-10, 3e-10, 6e-10], None),
+    ],
+)
+def test_dt_uses_relative_uniformity_tolerance(sample_voxeldata_3dt, time, expected):
+    interval = sample_voxeldata_3dt.assign_coords(time=time).vd.dt
+    if expected is None:
+        assert interval is None
+    else:
+        assert interval == pytest.approx(expected)
+
+
+def test_dt_requires_time_and_voxeldata(sample_voxeldata_3d, plain_volume):
+    with pytest.raises(ValueError, match="time.*coordinate"):
+        _ = sample_voxeldata_3d.vd.dt
+    with pytest.raises(ValueError, match="voxel-to-world index"):
+        _ = plain_volume.expand_dims(time=[0.0, 1.0]).vd.dt
+
+
+@pytest.mark.parametrize(
+    "time",
+    [
+        [0, 1, np.nan, 3],
+        [0, 1, np.inf, 3],
+        [0, 1, 1, 3],
+        [3, 2, 1, 0],
+        np.array([3, 2, 1, 0], dtype=np.uint64),
+        ["a", "b", "c", "d"],
+    ],
+)
+def test_dt_rejects_invalid_timestamps(sample_voxeldata_3dt, time):
+    with pytest.raises(ValueError, match="time.*finite.*increasing"):
+        _ = sample_voxeldata_3dt.assign_coords(time=time).vd.dt
+
+
 @pytest.mark.parametrize(
     "time_dims",
     [
@@ -39,7 +88,12 @@ def test_named_timestamp_dependencies_are_independent_of_geometry(
     np.testing.assert_array_equal(data.time, timestamps.transpose("time", ...))
     assert data.time.attrs == multiaxis_timestamps.attrs
     vd.validate_voxeldata(data)
+    with pytest.raises(ValueError, match="Timestamp dependencies must be selected"):
+        _ = data.vd.dt
+    with pytest.raises(ValueError, match="Timestamp dependencies must be selected"):
+        _ = data.isel(view=1).vd.dt
     selected = data.isel(view=1, channel=0)
+    assert selected.vd.dt == pytest.approx(1.0)
     np.testing.assert_allclose(selected.time, [0.1, 1.1, 2.1])
     np.testing.assert_array_equal(
         selected.sel(time=1.1), source.isel(view=1, channel=0, time=1)
@@ -141,4 +195,5 @@ def test_timestamp_metadata_does_not_compute_signal_data(multiaxis_timestamps):
     )
     vd.validate_voxeldata(data)
     assert isinstance(data.data, da.Array)
+    assert data.isel(view=1, channel=0).vd.dt == pytest.approx(1.0)
     np.testing.assert_allclose(data.time, multiaxis_timestamps)

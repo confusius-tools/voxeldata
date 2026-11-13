@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import xarray as xr
 
-from voxeldata._coordinates import get_coordinate_origins, get_coordinate_spacing_info
+from voxeldata._dims import TIME_DIM
 from voxeldata.affine import (
     TransformCenter,
     apply_affine,
@@ -159,53 +159,84 @@ class VoxelDataAccessor:
 
     @property
     def origin(self) -> dict[str, float]:
-        """Origin metadata for all dimensions.
-
-        Non-spatial dimensions report their first coordinate value; `z`/`y`/`x`
-        report the world location of the first sampled voxel.
+        """World position of the first sampled voxel.
 
         Returns
         -------
         dict[str, float]
-            Origin per non-spatial dimension followed by world coordinates.
+            Spatial origin keyed by `z`, `y`, `x`, in `.vd.world_units`.
+            Retained voxel labels account for cropping and striding.
+
+        Raises
+        ------
+        ValueError
+            If geometry is missing or geometry dependencies remain unselected.
         """
-        index = _require_index(self._obj)
-        voxel_dims = set(index.voxel_dims)
-        regular_origin = get_coordinate_origins(self._obj)
-        return {
-            **{
-                str(dim): regular_origin[str(dim)]
-                for dim in self._obj.dims
-                if str(dim) not in voxel_dims
-            },
-            **get_array_origin(self._obj),
-        }
+        _require_index(self._obj)
+        return get_array_origin(self._obj)
 
     @property
     def spacing(self) -> dict[str, float | None]:
-        """Coordinate spacing for all dimensions.
-
-        Voxel dimensions report their world step length; other dimensions report
-        their 1D coordinate step when defined.
+        """Physical sample spacing along native voxel axes only.
 
         Returns
         -------
         dict[str, float or None]
-            Spacing per dimension, or `None` when undefined or non-uniform.
+            World-space step lengths keyed by active voxel dimensions `k`, `j`,
+            `i`. Irregular voxel labels have undefined spacing (`None`).
+            Time sampling is exposed separately through `.vd.dt`.
+
+        Raises
+        ------
+        ValueError
+            If geometry is missing or spatial scalings differ across geometries.
         """
         _require_index(self._obj)
-        voxel_spacing = get_array_spacing(self._obj)
-        regular_spacing = {
-            str(dim): get_coordinate_spacing_info(str(dim), self._obj, 1e-2).value
-            for dim in self._obj.dims
-            if str(dim) not in voxel_spacing
-        }
-        return {
-            str(dim): voxel_spacing[str(dim)]
-            if str(dim) in voxel_spacing
-            else regular_spacing[str(dim)]
-            for dim in self._obj.dims
-        }
+        return get_array_spacing(self._obj)
+
+    @property
+    def dt(self) -> float | None:
+        """Sampling interval of a shared time coordinate.
+
+        Returns
+        -------
+        float or None
+            Median time interval in the time coordinate's units, normally seconds.
+            Sampling is uniform when every interval differs from the median by
+            at most 1%. Irregular sampling or fewer than two timestamps returns
+            `None`. Signal data is not evaluated.
+
+        Raises
+        ------
+        ValueError
+            If geometry or the time coordinate is missing, additional timestamp
+            dependencies remain unselected, or timestamps are not finite, real,
+            and strictly increasing.
+        """
+        _require_index(self._obj)
+        if TIME_DIM not in self._obj.coords:
+            raise ValueError("DataArray must have a 'time' coordinate.")
+        time = self._obj.coords[TIME_DIM]
+        if time.dims not in ((), (TIME_DIM,)):
+            raise ValueError(
+                "Timestamp dependencies must be selected before computing dt."
+            )
+        values = np.asarray(time.values)
+        if (
+            values.dtype.kind not in "iuf"
+            or not np.all(np.isfinite(values))
+            or np.any(values.reshape(-1)[1:] <= values.reshape(-1)[:-1])
+        ):
+            raise ValueError(
+                "'time' coordinate must be finite, real, and strictly increasing."
+            )
+        if values.size < 2:
+            return None
+        intervals = np.diff(values.astype(np.float64))
+        interval = float(np.median(intervals))
+        return (
+            interval if np.allclose(intervals, interval, rtol=1e-2, atol=0.0) else None
+        )
 
     @property
     def scalings(self) -> dict[str, float]:

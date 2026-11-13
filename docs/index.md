@@ -133,16 +133,17 @@ assert moving.isel(time=0, view=1).vd.geometry_dims == ()
   introduce new dependencies. `.vd.to(other, "lab")` aligns frame dependencies by
   name and rejects differing labels/order on shared axes. Returned NumPy batches
   use source dependency order followed by any additional target dependencies.
-- **Geometry helpers:** bounding boxes retain all geometry axes and reindexing
-  operates directly on affine stacks, without generating dense world coordinates.
-  Scalar origin/direction require a selected geometry. Spacing/scalings require
-  equal scales across geometries; otherwise select one first. `.vd.spacing` still
-  includes ordinary nonspatial coordinate spacing, where defined.
+- **Geometry helpers:** bounding boxes enclose all grids and reindexing operates
+  directly on affine stacks, without generating dense world coordinates.
+  Spatial origin/direction require a selected geometry. Spacing/scalings require
+  equal scales across geometries; otherwise select one first. `.vd.origin` and
+  `.vd.spacing` describe spatial sampling only (`z/y/x` and `k/j/i`, respectively).
 - **Timing:** a named time DataArray may depend on `time` and any number of
   additional nonspatial dimensions, independently of `geometry_dims`. Each series
   must be finite and increase along `time`. Select timestamp dependencies before
-  using a shared-time index or analysis. Timing values and attrs survive slicing
-  and canonicalization. Auxiliary coordinates such as `slice_time(time, k)` remain
+  using a shared-time index or analysis. `.vd.dt` reports the shared time sampling
+  interval, or `None` for irregular sampling or fewer than two timestamps. Timing
+  values and attrs survive slicing and canonicalization. Auxiliary coordinates such as `slice_time(time, k)` remain
   consumer-defined; VoxelData does not interpret them or supply acquisition defaults.
 - **Persistence:** Python pickle round-trips preserve geometry dependencies and
   named frames. VoxelData does not provide a Zarr/NetCDF serializer: external

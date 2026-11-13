@@ -159,7 +159,7 @@ def test_rotated_view_coordinates(
         [point.coords[d].item() for d in ("z", "y", "x")], [96, 201, 309]
     )
     assert not result.vd.is_axis_aligned
-    assert result.vd.spacing == {"view": 10, "k": 1, "j": 2, "i": 3}
+    assert result.vd.spacing == {"k": 1, "j": 2, "i": 3}
 
 
 @pytest.mark.parametrize("property_name", ["origin", "direction"])
