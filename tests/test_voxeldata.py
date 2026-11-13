@@ -162,9 +162,8 @@ def test_get_bounding_box_includes_half_voxel_extent() -> None:
     )
     bbox = vd.get_bounding_box(data)
 
-    np.testing.assert_allclose(bbox.sel(bound="min", component="z"), -0.5)
-    np.testing.assert_allclose(bbox.sel(bound="max", component="z"), 1.5)
-    np.testing.assert_allclose(bbox.sel(bound="max", component="x"), 10.5)
+    np.testing.assert_allclose(bbox["z"], [-0.5, 1.5])
+    np.testing.assert_allclose(bbox["x"][1], 10.5)
 
 
 def test_convert_length_units() -> None:

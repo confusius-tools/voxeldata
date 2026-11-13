@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from voxeldata.geometry import VoxelToWorldIndex
 
 
-def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
+def get_bounding_box(data: xr.DataArray) -> dict[str, tuple[float, float]]:
     """Return the world-space bounding box of a VoxelData array.
 
     The box encloses the full extent of every voxel, not just the voxel centers: the
@@ -50,10 +50,9 @@ def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
 
     Returns
     -------
-    (2, 3) xarray.DataArray
-        Bounding box with dims `(bound, component)`, where `bound` is
-        `["min", "max"]` and `component` is `["z", "y", "x"]`, and a `units` attr
-        from the voxel-to-world index. The bounds enclose all geometries.
+    dict[str, tuple[float, float]]
+        World coordinate names `z`, `y`, `x` mapped to `(min, max)` bounds in
+        `.vd.world_units`. The bounds enclose all geometries.
 
     Raises
     ------
@@ -66,7 +65,7 @@ def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
     Examples
     --------
     >>> bbox = get_bounding_box(volume)
-    >>> bbox.sel(bound="min", component="z").item()
+    >>> bbox["z"][0]
     """
     from voxeldata.validation import ensure_voxeldata
 
@@ -110,29 +109,19 @@ def get_bounding_box(data: xr.DataArray) -> xr.DataArray:
     axes = (*range(world_corners.ndim - 2), -1)
     bounds = np.stack([world_corners.min(axis=axes), world_corners.max(axis=axes)])
 
-    coords: dict[str, npt.ArrayLike] = {
-        "bound": np.array(["min", "max"], dtype=np.str_),
-        "component": np.array(WORLD_DIMS, dtype=np.str_),
+    return {
+        dim: (float(bounds[0, axis]), float(bounds[1, axis]))
+        for axis, dim in enumerate(WORLD_DIMS)
     }
-    return xr.DataArray(
-        bounds,
-        dims=("bound", "component"),
-        coords=coords,
-        attrs={"units": get_voxel_to_world_units(data)},
-    )
 
 
 TransformCenter: TypeAlias = (
-    Literal["origin", "geometry"]
-    | Sequence[float]
-    | Mapping[str, float]
-    | np.ndarray
-    | xr.DataArray
+    Literal["origin", "geometry"] | Sequence[float] | Mapping[str, float] | np.ndarray
 )
 """Transform pivot: a named point or an explicit world `(z, y, x)` point."""
 
 
-def get_geometry_center(data: xr.DataArray) -> xr.DataArray:
+def get_geometry_center(data: xr.DataArray) -> dict[str, float]:
     """Return the midpoint of the world-space box enclosing all grids.
 
     Parameters
@@ -142,17 +131,19 @@ def get_geometry_center(data: xr.DataArray) -> xr.DataArray:
 
     Returns
     -------
-    xarray.DataArray
-        A shared center with dimension `component`, components `z`, `y`, `x`,
-        and a `units` attribute. Select geometry dependencies first for a
-        grid-specific center.
+    dict[str, float]
+        Shared center keyed by `z`, `y`, `x`, in `.vd.world_units`. Select
+        geometry dependencies first for a grid-specific center.
 
     Raises
     ------
     ValueError
         If the array is invalid or voxel coordinates are irregular.
     """
-    return get_bounding_box(data).mean("bound", keep_attrs=True)
+    return {
+        dim: (lower + upper) / 2
+        for dim, (lower, upper) in get_bounding_box(data).items()
+    }
 
 
 def get_relative_affine(
@@ -467,7 +458,8 @@ def _resolve_center(data: xr.DataArray, center: TransformCenter) -> np.ndarray:
     if not isinstance(center, str):
         return _as_finite_array(center, "center", (3,))
     if center == "geometry":
-        return get_geometry_center(data).values
+        point = get_geometry_center(data)
+        return np.array([point[dim] for dim in WORLD_DIMS])
     if center == "origin":
         from voxeldata.validation import ensure_voxeldata
 

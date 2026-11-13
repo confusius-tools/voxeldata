@@ -21,11 +21,11 @@ def test_geometry_centers_match_sampled_world_extents(
         axis=-1,
     )
     center = vd.get_geometry_center(data)
-    np.testing.assert_allclose(center, expected)
-    assert center.dims == ("component",)
-    np.testing.assert_array_equal(center.component, vd.WORLD_DIMS)
-    assert center.attrs["units"] == data.vd.world_units
-    xr.testing.assert_identical(center, data.vd.geometry_center)
+    assert isinstance(center, dict)
+    assert tuple(center) == vd.WORLD_DIMS
+    assert all(isinstance(value, float) for value in center.values())
+    np.testing.assert_allclose([center[dim] for dim in vd.WORLD_DIMS], expected)
+    assert center == data.vd.geometry_center
 
 
 @pytest.mark.parametrize("inplace", [False, True])
@@ -123,7 +123,7 @@ def test_rotation_sequence_is_fixed_world_axis_order(
 
 @pytest.mark.parametrize(
     "center",
-    [[3, 4, 5], {"x": 5, "z": 3, "y": 4, "ignored": 9}, xr.DataArray([3, 4, 5])],
+    [[3, 4, 5], {"x": 5, "z": 3, "y": 4, "ignored": 9}, np.array([3, 4, 5])],
 )
 def test_explicit_center_is_shared(
     sample_voxeldata_views: xr.DataArray, center: Any
@@ -154,11 +154,76 @@ def test_origin_pivot_uses_cropped_descending_native_labels(
     np.testing.assert_allclose(result.vd.voxel_to_world, expected)
 
 
+@pytest.mark.parametrize(
+    "method,args", [("rotate", (30, "y")), ("zoom", (3,)), ("flip", ("x",))]
+)
+@pytest.mark.parametrize("views", [[10, 20], [20]])
 def test_origin_pivot_requires_selecting_geometry_dependencies(
     sample_voxeldata_views: xr.DataArray,
+    method: str,
+    args: tuple[Any, ...],
+    views: list[int],
 ) -> None:
     with pytest.raises(ValueError, match="geometry dimensions"):
-        sample_voxeldata_views.vd.zoom(2, center="origin")
+        getattr(sample_voxeldata_views.sel(view=views).vd, method)(
+            *args, center="origin"
+        )
+
+
+@pytest.mark.parametrize(
+    "method,args,expected_offset",
+    [
+        ("rotate", (90, "x"), [-2, 1, 3]),
+        ("zoom", (3,), [3, 6, 9]),
+        ("flip", ("x",), [1, 2, -3]),
+    ],
+)
+@pytest.mark.parametrize(
+    "center_kind",
+    ["origin", "geometry", "point", "mapping", "origin_mapping", "geometry_mapping"],
+)
+def test_pivots_fix_center_and_transform_displaced_point(
+    sample_voxeldata_3d_oblique: xr.DataArray,
+    oblique_affine: np.ndarray,
+    method: str,
+    args: tuple[Any, ...],
+    expected_offset: list[float],
+    center_kind: str,
+) -> None:
+    data = sample_voxeldata_3d_oblique.isel(k=1, i=slice(None, None, -1)).expand_dims(
+        "channel"
+    )
+    if center_kind in ("origin", "origin_mapping"):
+        pivot = (oblique_affine @ [1, 0, 3, 1])[:3]
+        center = "origin" if center_kind == "origin" else data.vd.origin
+    elif center_kind in ("geometry", "geometry_mapping"):
+        pivot = np.array(
+            [
+                (data.coords[dim].min().item() + data.coords[dim].max().item()) / 2
+                for dim in vd.WORLD_DIMS
+            ]
+        )
+        center = "geometry" if center_kind == "geometry" else data.vd.geometry_center
+    else:
+        pivot = np.array([5.0, -7.0, 2.0])
+        center = (
+            pivot
+            if center_kind == "point"
+            else {"x": 2.0, "z": 5.0, "y": -7.0, "ignored": 12.0}
+        )
+    result = getattr(data.vd, method)(*args, center=center)
+    action = result.vd.voxel_to_world @ np.linalg.inv(oblique_affine)
+    np.testing.assert_allclose(action @ [*pivot, 1], [*pivot, 1], atol=1e-12)
+    np.testing.assert_allclose(
+        (action @ [*(pivot + [1, 2, 3]), 1])[:3], pivot + expected_offset, atol=1e-12
+    )
+    np.testing.assert_array_equal(
+        result.values, data.expand_dims(k=[1], axis=-3).values
+    )
+    if center_kind == "geometry":
+        np.testing.assert_allclose(
+            getattr(data.vd, method)(*args).vd.voxel_to_world, result.vd.voxel_to_world
+        )
 
 
 @pytest.mark.parametrize("method", ["translate", "rotate", "zoom", "flip"])
@@ -304,7 +369,10 @@ def test_multiple_geometry_dependencies_and_variable_scales() -> None:
     )
     result = data.vd.zoom([2, 3, 4])
     assert result.vd.geometry_dims == ("view", "time")
-    np.testing.assert_allclose(result.vd.geometry_center, data.vd.geometry_center)
+    for dim in vd.WORLD_DIMS:
+        np.testing.assert_allclose(
+            result.vd.geometry_center[dim], data.vd.geometry_center[dim]
+        )
     np.testing.assert_allclose(
         result.vd.voxel_to_world[..., :3, :3], np.diag([2, 3, 4]) @ affines[..., :3, :3]
     )

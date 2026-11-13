@@ -263,25 +263,25 @@ class VoxelDataAccessor:
         return get_voxel_to_world_direction_matrix(self._obj)
 
     @property
-    def bounding_box(self) -> xr.DataArray:
+    def bounding_box(self) -> dict[str, tuple[float, float]]:
         """World-space bounding box enclosing every voxel across all grids.
 
         Returns
         -------
-        xarray.DataArray
-            Bounds with dimensions `(bound, component)` and world units. Select
-            geometry dependencies first for grid-specific bounds.
+        dict[str, tuple[float, float]]
+            World axis names mapped to `(min, max)` bounds in `.vd.world_units`.
+            Select geometry dependencies first for grid-specific bounds.
         """
         return get_bounding_box(self._obj)
 
     @property
-    def geometry_center(self) -> xr.DataArray:
+    def geometry_center(self) -> dict[str, float]:
         """Midpoint of the world-space bounding box enclosing all grids.
 
         Returns
         -------
-        xarray.DataArray
-            Shared center with dimension `component` and world units. Select
+        dict[str, float]
+            Shared center keyed by world axis name, in `.vd.world_units`. Select
             geometry dependencies first for a grid-specific center.
         """
         return get_geometry_center(self._obj)

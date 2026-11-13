@@ -44,7 +44,10 @@ API details belong in `docs/api/` and the README; planned work belongs in
   `.vd.origin`/`.vd.spacing` describe only spatial geometry (`z/y/x` world origin
   and `k/j/i` physical sample spacing). `.vd.dt` reports shared time sampling;
   select additional timestamp dependencies first. `.vd.world_units` describes
-  world-coordinate units, not signal or time units.
+  world-coordinate units, not signal or time units. `.vd.bounding_box` and
+  `.vd.geometry_center` return world-axis dictionaries enclosing all grids:
+  `(min, max)` tuples and scalar centers, respectively. Select geometry
+  dependencies first for grid-specific summaries.
 - Named frames live on `VoxelToWorldIndex.named_affines`. Frames are finite, homogeneous
   world-frame `(4, 4)` matrices or full geometry-shaped stacks. Named frames need not
   share scales; index equality remains geometry-only.

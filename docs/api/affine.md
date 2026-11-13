@@ -7,11 +7,18 @@ frames are re-expressed relative to the transformed world frame.
 
 The default `center="geometry"` uses the midpoint of the bounding box enclosing
 **all grids**, providing one shared pivot as in ConfUSIus. `.vd.bounding_box`
-returns a labeled DataArray with dimensions `(bound, component)`;
-`.vd.geometry_center` has dimension `component`. Both carry a `units` attribute.
+returns a dictionary mapping `z`, `y`, `x` to `(min, max)` tuples;
+`.vd.geometry_center` maps the same keys to floats, matching `.vd.origin`.
+Values use `.vd.world_units`. These are geometry summaries rather than sampled
+arrays; they do not carry dimensions or coordinate attributes.
 Select geometry dependencies first for grid-specific bounds or centers, e.g.
 `data.sel(pose=pose_label).vd.bounding_box` or
 `data.sel(pose=pose_label).vd.geometry_center` when geometry depends on `pose`.
+
+Bounds and centers previously returned DataArrays. Use `bounding_box["x"][0]`
+instead of `bounding_box.sel(bound="min", component="x")`, and
+`geometry_center["x"]` instead of `geometry_center.sel(component="x")`.
+Retrieve units from `.vd.world_units`, not result attributes.
 
 `center="origin"` uses the first sampled voxel, including after cropping or
 reversing native labels, and requires selecting all geometry dependencies first.

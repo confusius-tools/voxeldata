@@ -190,7 +190,7 @@ def test_bounds_and_reindex_without_dense_world_arrays(multigeometry_data):
         bounds = data.vd.bounding_box
         rebased = data.vd.reindex_voxels()
         restored = rebased.vd.reindex_voxels_like(data)
-    assert bounds.dims == ("bound", "component")
+    assert tuple(bounds) == vd.WORLD_DIMS
     corners = np.array(list(itertools.product([1, 5], [1.5, 10.5], [4, 12])))
     all_world = []
     for t in range(3):
@@ -202,12 +202,16 @@ def test_bounds_and_reindex_without_dense_world_arrays(multigeometry_data):
             all_world.append(world)
             selected = data.sel(time=data.time.values[t], view=data.view.values[v])
             expected = np.stack([world.min(axis=1), world.max(axis=1)])
-            np.testing.assert_allclose(selected.vd.bounding_box, expected)
-            np.testing.assert_allclose(
-                selected.vd.geometry_center, expected.mean(axis=0)
-            )
+            for axis, dim in enumerate(vd.WORLD_DIMS):
+                np.testing.assert_allclose(
+                    selected.vd.bounding_box[dim], expected[:, axis]
+                )
+                np.testing.assert_allclose(
+                    selected.vd.geometry_center[dim], expected[:, axis].mean()
+                )
     world = np.concatenate(all_world, axis=1)
-    np.testing.assert_allclose(bounds, np.stack([world.min(axis=1), world.max(axis=1)]))
+    for axis, dim in enumerate(vd.WORLD_DIMS):
+        np.testing.assert_allclose(bounds[dim], [world[axis].min(), world[axis].max()])
     np.testing.assert_allclose(
         rebased.vd.index.voxel_to_world[..., :3, 3],
         (data.vd.index.voxel_to_world @ [2, 3, 5, 1])[..., :3],
@@ -234,7 +238,13 @@ def test_variable_scalings_are_not_silently_taken_from_first_geometry(
     for property_name in ("origin", "direction"):
         with pytest.raises(ValueError, match="geometry dimensions"):
             getattr(data.vd, property_name)
-    assert data.vd.bounding_box.shape == (2, 3)
+    corners = np.array(list(itertools.product([1, 5], [1.5, 10.5], [4, 12])))
+    world = (affines @ np.column_stack([corners, np.ones(8)]).T)[..., :3, :]
+    for axis, dim in enumerate(vd.WORLD_DIMS):
+        np.testing.assert_allclose(
+            data.vd.bounding_box[dim],
+            [world[..., axis, :].min(), world[..., axis, :].max()],
+        )
     assert data.vd.reindex_voxels().vd.geometry_dims == ("time", "view")
 
 
@@ -338,9 +348,11 @@ def test_lazy_geometry_does_not_compute_signal_data():
         assert selected.vd.geometry_dims == ("time",)
         assert isinstance(selected.data, da.Array)
         assert selected.z.shape == (50, 2, 3, 2)
-        np.testing.assert_allclose(
-            selected.vd.bounding_box, [[-0.5, -0.5, -1], [1.5, 2.5, 3]]
-        )
+        assert selected.vd.bounding_box == {
+            "z": (-0.5, 1.5),
+            "y": (-0.5, 2.5),
+            "x": (-1.0, 3.0),
+        }
         assert isinstance(selected.vd.reindex_voxels().data, da.Array)
         assert selected.vd.apply(np.eye(4), inplace=True) is selected
         assert isinstance(selected.data, da.Array)

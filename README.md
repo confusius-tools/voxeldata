@@ -136,10 +136,16 @@ re-expressed relative to the new world frame). They return a new array by defaul
 
 Rotation, zoom, and flip default to `center="geometry"`, the midpoint of the
 bounding box **enclosing all grids**, so every geometry uses one shared pivot.
-`bounding_box` has dimensions `(bound, component)`; `geometry_center` has dimension
-`component`. Both carry a `units` attribute. Select geometry dependencies first for
-grid-specific values, e.g. `data.sel(view=20).vd.bounding_box` and
+`bounding_box` maps each world axis to a `(min, max)` tuple, e.g.
+`data.vd.bounding_box["x"]`. `geometry_center` maps each world axis to a float,
+e.g. `data.vd.geometry_center["x"]`, matching `.vd.origin`. Values use
+`.vd.world_units`. Select geometry dependencies first for grid-specific values,
+e.g. `data.sel(view=20).vd.bounding_box` and
 `data.sel(view=20).vd.geometry_center`.
+
+Bounds and centers return dictionaries, not DataArrays: replace
+`bounding_box.sel(bound="min", component="x")` with `bounding_box["x"][0]`
+and `geometry_center.sel(component="x")` with `geometry_center["x"]`.
 
 `center="origin"` uses the first sampled voxel, including after cropping or
 reversing native labels, and requires selecting all geometry dependencies first.

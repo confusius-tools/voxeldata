@@ -34,25 +34,28 @@ def test_bounds_match_full_materialized_edge_grid(
     world = edges @ affine[:3, :3].T + affine[:3, 3]
     expected = np.stack([world.min(axis=0), world.max(axis=0)])
     bounds = vd.get_bounding_box(data)
-    np.testing.assert_allclose(bounds.values, expected)
-    assert bounds.dims == ("bound", "component")
-    np.testing.assert_array_equal(bounds.coords["bound"], ["min", "max"])
-    np.testing.assert_array_equal(bounds.coords["component"], ["z", "y", "x"])
-    assert bounds.attrs["units"] == "mm"
-    np.testing.assert_allclose(data.vd.bounding_box.values, expected)
+    assert isinstance(bounds, dict)
+    assert tuple(bounds) == vd.WORLD_DIMS
+    for axis, dim in enumerate(vd.WORLD_DIMS):
+        assert isinstance(bounds[dim], tuple)
+        assert all(isinstance(value, float) for value in bounds[dim])
+        np.testing.assert_allclose(bounds[dim], expected[:, axis])
+    assert data.vd.bounding_box == bounds
 
 
 def test_bounds_use_stride_and_descending_coordinate_step(
     sample_voxeldata_3d: xr.DataArray,
 ) -> None:
     data = sample_voxeldata_3d.isel(i=slice(None, None, -2))
-    np.testing.assert_allclose(data.vd.bounding_box.sel(component="x"), [30, 42])
+    np.testing.assert_allclose(data.vd.bounding_box["x"], [30, 42])
 
 
 def test_bounds_restore_singleton_axis(sample_voxeldata_3d: xr.DataArray) -> None:
     expected = [[10.5, 19, 28.5], [11.5, 25, 40.5]]
     for data in (sample_voxeldata_3d.isel(k=1), sample_voxeldata_3d.isel(k=[1])):
-        np.testing.assert_allclose(vd.get_bounding_box(data), expected)
+        bounds = vd.get_bounding_box(data)
+        for axis, dim in enumerate(vd.WORLD_DIMS):
+            np.testing.assert_allclose(bounds[dim], np.asarray(expected)[:, axis])
 
 
 def test_irregular_bounds_are_rejected(
@@ -66,20 +69,24 @@ def test_view_bounds_enclose_all_grids_and_selection_recovers_individual_bounds(
     sample_voxeldata_views: xr.DataArray,
 ) -> None:
     bounds = sample_voxeldata_views.vd.bounding_box
-    assert bounds.dims == ("bound", "component")
-    np.testing.assert_allclose(bounds, [[9.5, -1, 28.5], [111.5, 25, 45.5]])
-    np.testing.assert_allclose(
-        sample_voxeldata_views.vd.geometry_center, [60.5, 12, 37]
-    )
+    assert bounds == {"z": (9.5, 111.5), "y": (-1.0, 25.0), "x": (28.5, 45.5)}
+    assert sample_voxeldata_views.vd.geometry_center == {
+        "z": 60.5,
+        "y": 12.0,
+        "x": 37.0,
+    }
     for label, expected in [
         (10, [[9.5, 19, 28.5], [11.5, 25, 40.5]]),
         (20, [[109.5, -1, 33.5], [111.5, 5, 45.5]]),
     ]:
         selected = sample_voxeldata_views.sel(view=label)
-        np.testing.assert_allclose(selected.vd.bounding_box, expected)
-        np.testing.assert_allclose(
-            selected.vd.geometry_center, np.mean(expected, axis=0)
-        )
+        for axis, dim in enumerate(vd.WORLD_DIMS):
+            np.testing.assert_allclose(
+                selected.vd.bounding_box[dim], np.asarray(expected)[:, axis]
+            )
+            np.testing.assert_allclose(
+                selected.vd.geometry_center[dim], np.mean(expected, axis=0)[axis]
+            )
 
 
 @pytest.mark.parametrize("fixture", ["sample_voxeldata_3d", "sample_voxeldata_views"])
