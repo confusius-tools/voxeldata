@@ -68,7 +68,7 @@ def test_transforms_preserve_samples_labels_and_reexpress_frames(
     )
     for name, frame in frames.items():
         np.testing.assert_allclose(
-            result.vd.get_affine(name),
+            result.vd.affines[name],
             frame @ np.linalg.inv(action),
             atol=1e-13,
         )

@@ -11,7 +11,7 @@ import xarray as xr
 
 from voxeldata._dims import VOXEL_DIMS, WORLD_DIMS
 from voxeldata.geometry import attach_voxel_to_world_index
-from voxeldata.validation import ensure_voxeldata
+from voxeldata.validation import canonicalize_voxeldata
 
 _GEOMETRY_ARRAY_ATTRS = (
     "voxel_to_world",
@@ -179,7 +179,7 @@ def save(
     if storage_format == "netcdf" and not isinstance(data, xr.DataArray):
         raise TypeError("VoxelData dataset and tree I/O supports Zarr only.")
     if isinstance(data, xr.DataArray):
-        prepared = _serialize_array(ensure_voxeldata(data), storage_format)
+        prepared = _serialize_array(canonicalize_voxeldata(data), storage_format)
         if storage_format == "netcdf":
             return prepared.to_netcdf(path, **kwargs)
         _sanitize_zarr_attrs(prepared)
@@ -445,7 +445,7 @@ def _restore_array(
         named_affines=frames,
         geometry_dims=None if geometry_dims is None else tuple(geometry_dims),
     )
-    return ensure_voxeldata(data)
+    return canonicalize_voxeldata(data)
 
 
 def _sanitize_zarr_attrs(data: xr.DataArray | xr.Dataset) -> None:
@@ -499,7 +499,11 @@ def _map_dataset(dataset: xr.Dataset, *, restore: bool, group: str) -> xr.Datase
         ):
             continue
         try:
-            array = _restore_array(data, "zarr") if restore else ensure_voxeldata(data)
+            array = (
+                _restore_array(data, "zarr")
+                if restore
+                else canonicalize_voxeldata(data)
+            )
             index = array.vd.index
             if reference is None:
                 reference = array

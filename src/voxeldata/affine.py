@@ -45,7 +45,7 @@ def get_bounding_box(data: xr.DataArray) -> dict[str, tuple[float, float]]:
     ----------
     data : xarray.DataArray
         VoxelData array, normalized with
-        [ensure_voxeldata][voxeldata.validation.ensure_voxeldata] (scalar-indexed
+        [canonicalize_voxeldata][voxeldata.validation.canonicalize_voxeldata] (scalar-indexed
         voxel dims are restored as singletons before computing the bounds).
 
     Returns
@@ -67,9 +67,9 @@ def get_bounding_box(data: xr.DataArray) -> dict[str, tuple[float, float]]:
     >>> bbox = get_bounding_box(volume)
     >>> bbox["z"][0]
     """
-    from voxeldata.validation import ensure_voxeldata
+    from voxeldata.validation import canonicalize_voxeldata
 
-    data = ensure_voxeldata(data)
+    data = canonicalize_voxeldata(data)
     voxel_dims = get_voxel_to_world_spatial_dims(data)
     affine = get_voxel_to_world_affine(data)
 
@@ -277,7 +277,7 @@ def apply_affine(
     >>> float(result.coords["x"].isel(k=0, j=0, i=0))
     10.0
     """
-    from voxeldata.validation import ensure_voxeldata
+    from voxeldata.validation import canonicalize_voxeldata
 
     _require_voxel_to_world_index(da)
     # Restore scalar-selected axes before composing square homogeneous matrices.
@@ -286,7 +286,7 @@ def apply_affine(
             raise ValueError(
                 "inplace=True needs all native voxel dims; use inplace=False."
             )
-        da = ensure_voxeldata(da)
+        da = canonicalize_voxeldata(da)
     index = _require_voxel_to_world_index(da)
     applied_key = affine if isinstance(affine, str) else None
     if applied_key is not None:
@@ -461,9 +461,9 @@ def _resolve_center(data: xr.DataArray, center: TransformCenter) -> np.ndarray:
         point = get_geometry_center(data)
         return np.array([point[dim] for dim in WORLD_DIMS])
     if center == "origin":
-        from voxeldata.validation import ensure_voxeldata
+        from voxeldata.validation import canonicalize_voxeldata
 
-        point = get_array_origin(ensure_voxeldata(data))
+        point = get_array_origin(canonicalize_voxeldata(data))
         return np.array([point[dim] for dim in WORLD_DIMS])
     raise ValueError("center must be 'origin', 'geometry' or a (3,) world point.")
 

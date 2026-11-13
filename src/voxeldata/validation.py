@@ -369,25 +369,29 @@ def _validate_uniform_time(da: xr.DataArray, tolerance: float) -> None:
         raise ValueError("'time' coordinate must be uniformly spaced.")
 
 
-def canonicalize_voxeldata(data: xr.DataArray) -> xr.DataArray:
-    """Restore scalar-indexed VoxelData dimensions and order them canonically.
+def canonicalize_voxeldata(data: xr.DataArray, **validate_kwargs: Any) -> xr.DataArray:
+    """Return a canonical, validated VoxelData array.
 
     Scalar indexing such as `data.isel(j=0)` removes `j` from the array dimensions
     but retains it as a scalar coordinate. This function restores every missing
     native voxel dimension (`k`, `j`, `i`) as a length-one dimension, rebuilds
     voxel-to-world geometry from the untouched affine, then orders dimensions as
     `(...extra_dims, time, k, j, i)`. Extra dimensions retain their relative
-    order. Missing nonspatial dimensions are not restored.
+    order. Missing nonspatial dimensions are not restored. The normalized result
+    is validated with [validate_voxeldata][voxeldata.validation.validate_voxeldata].
 
     Parameters
     ----------
     data : xarray.DataArray
-        DataArray to canonicalize.
+        DataArray to canonicalize and validate.
+    **validate_kwargs : Any
+        Keyword arguments forwarded to
+        [validate_voxeldata][voxeldata.validation.validate_voxeldata].
 
     Returns
     -------
     xarray.DataArray
-        Canonicalized DataArray with all native voxel dimensions present.
+        Canonicalized VoxelData array that satisfies the requested checks.
 
     Raises
     ------
@@ -395,7 +399,7 @@ def canonicalize_voxeldata(data: xr.DataArray) -> xr.DataArray:
         If `data` is not an `xarray.DataArray`.
     ValueError
         If a native voxel dimension is absent and has no scalar coordinate from which
-        to restore it, or its same-named coordinate is not scalar.
+        to restore it, its same-named coordinate is not scalar, or validation fails.
     """
     data = require_dataarray(data)
 
@@ -428,41 +432,10 @@ def canonicalize_voxeldata(data: xr.DataArray) -> xr.DataArray:
         result.coords[dim].attrs.update(attrs)
 
     result = restore_voxel_to_world_index(result)
-    return result.transpose(
+    result = result.transpose(
         *(dim for dim in result.dims if dim not in CORE_DIMS),
         *(dim for dim in CORE_DIMS if dim in result.dims),
     )
-
-
-def ensure_voxeldata(data: xr.DataArray, **validate_kwargs: Any) -> xr.DataArray:
-    """Return a canonical, validated VoxelData array.
-
-    This restores scalar-indexed native voxel dimensions, orders dimensions as
-    `(...extra_dims, time, k, j, i)`, preserving the relative order of extra
-    dimensions, then validates the result with
-    [validate_voxeldata][voxeldata.validation.validate_voxeldata].
-
-    Parameters
-    ----------
-    data : xarray.DataArray
-        DataArray to canonicalize and validate.
-    **validate_kwargs : Any
-        Keyword arguments forwarded to
-        [validate_voxeldata][voxeldata.validation.validate_voxeldata].
-
-    Returns
-    -------
-    xarray.DataArray
-        Canonicalized VoxelData array that satisfies the requested checks.
-
-    Raises
-    ------
-    TypeError
-        If `data` is not an `xarray.DataArray`.
-    ValueError
-        If canonicalization or validation fails.
-    """
-    result = canonicalize_voxeldata(data)
     validate_voxeldata(result, **validate_kwargs)
     return result
 
@@ -487,7 +460,7 @@ def validate_voxeldata(
     Nonspatial dimensions, including optional `time`, may appear in any
     order. Every dimension coordinate is validated. Optional flags add requirements needed
     by a particular consumer. Use
-    [ensure_voxeldata][voxeldata.validation.ensure_voxeldata] when scalar indexing
+    [canonicalize_voxeldata][voxeldata.validation.canonicalize_voxeldata] when scalar indexing
     may have removed a voxel dimension and the input should be canonicalized first.
 
     Parameters

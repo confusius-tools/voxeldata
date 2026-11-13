@@ -196,12 +196,46 @@ def test_canonicalize_restores_coordinate_attrs_and_values(
 ) -> None:
     data = sample_voxeldata_3d
     data.coords["j"].attrs["long_name"] = "native index"
-    restored = vd.ensure_voxeldata(data.isel(j=2))
+    restored = vd.canonicalize_voxeldata(data.isel(j=2))
     assert restored.coords["j"].attrs == {"long_name": "native index"}
     np.testing.assert_array_equal(
         restored.values[:, 0], [[8, 9, 10, 11], [20, 21, 22, 23]]
     )
     np.testing.assert_allclose(restored.coords["y"], 24)
+
+
+@pytest.mark.parametrize("use_accessor", [False, True])
+def test_canonicalize_validates_geometry_and_forwards_requirements(
+    sample_voxeldata_3dt: xr.DataArray,
+    plain_volume: xr.DataArray,
+    use_accessor: bool,
+) -> None:
+    """Normalization always validates, including caller-specific requirements."""
+    data = sample_voxeldata_3dt.isel(j=2)
+    canonicalize = (
+        data.vd.canonicalize
+        if use_accessor
+        else lambda **kwargs: vd.canonicalize_voxeldata(data, **kwargs)
+    )
+    result = canonicalize(
+        require_time=True, require_uniform_time=True, require_dtype=np.floating
+    )
+    assert result.dims == ("time", "k", "j", "i")
+    np.testing.assert_array_equal(
+        result.values, sample_voxeldata_3dt.isel(j=[2]).values
+    )
+    with pytest.raises(TypeError, match="dtype"):
+        canonicalize(require_dtype=np.integer)
+    with pytest.raises(ValueError, match="time"):
+        if use_accessor:
+            data.isel(time=0).vd.canonicalize(require_time=True)
+        else:
+            vd.canonicalize_voxeldata(data.isel(time=0), require_time=True)
+    with pytest.raises(ValueError, match="VoxelToWorldIndex"):
+        if use_accessor:
+            plain_volume.vd.canonicalize()
+        else:
+            vd.canonicalize_voxeldata(plain_volume)
 
 
 def test_dtype_validation(sample_voxeldata_3d: xr.DataArray) -> None:

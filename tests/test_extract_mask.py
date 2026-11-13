@@ -50,7 +50,7 @@ def test_extract_with_mask_restores_scalar_voxel_dim(
     """`data` with a scalar-reduced voxel dim (e.g. from `.isel(k=0)`) is canonicalized.
 
     `.isel(k=0)` collapses `k` to a scalar coordinate, dropping the dim itself, which
-    only `ensure_voxeldata` restores -- exercises that `extract_with_mask`
+    only `canonicalize_voxeldata` restores -- exercises that `extract_with_mask`
     canonicalizes `data` itself rather than relying on `ensure_mask`'s internal
     (and discarded) canonicalization of it.
     """

@@ -29,19 +29,16 @@ from voxeldata.affine import (
 from voxeldata.geometry import (
     VoxelToWorldIndex,
     attach_voxel_to_world_index,
-    get_affine_axis_scalings,
     get_array_origin,
     get_array_spacing,
     get_voxel_to_world_affine,
     get_voxel_to_world_direction_matrix,
     get_voxel_to_world_index,
-    get_voxel_to_world_spatial_dims,
     get_voxel_to_world_units,
     has_axis_aligned_voxel_to_world_index,
 )
 from voxeldata.validation import (
     canonicalize_voxeldata,
-    ensure_voxeldata,
     validate_voxeldata,
 )
 
@@ -79,29 +76,6 @@ class VoxelDataAccessor:
         return _require_index(self._obj)
 
     @property
-    def voxel_dims(self) -> tuple[str, ...]:
-        """Active voxel dimensions.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Active voxel dimension names in affine column order.
-        """
-        return get_voxel_to_world_spatial_dims(self._obj)
-
-    @property
-    def world_dims(self) -> tuple[str, ...]:
-        """World coordinate names.
-
-        Returns
-        -------
-        tuple[str, ...]
-            World coordinate names in affine row order.
-        """
-        _require_index(self._obj)
-        return ("z", "y", "x")
-
-    @property
     def geometry_dims(self) -> tuple[str, ...]:
         """Named affine dependencies, in affine batch-axis order.
 
@@ -122,17 +96,6 @@ class VoxelDataAccessor:
             Whether world axes align with voxel axes (allowing signed scaling).
         """
         return has_axis_aligned_voxel_to_world_index(self._obj)
-
-    @property
-    def fixed_voxel_coords(self) -> dict[str, float]:
-        """Voxel coordinates pinned by a prior scalar selection.
-
-        Returns
-        -------
-        dict[str, float]
-            Pinned voxel-space coordinates keyed by dimension name.
-        """
-        return _require_index(self._obj).fixed_voxel_coords
 
     @property
     def world_units(self) -> str:
@@ -239,18 +202,6 @@ class VoxelDataAccessor:
         )
 
     @property
-    def scalings(self) -> dict[str, float]:
-        """World distance per voxel-space unit along each voxel axis.
-
-        Returns
-        -------
-        dict[str, float]
-            Column norms of the affine's linear part, keyed by voxel dimension.
-        """
-        index = _require_index(self._obj)
-        return get_affine_axis_scalings(self.voxel_to_world, index.voxel_dims)
-
-    @property
     def direction(self) -> np.ndarray:
         """World-space direction matrix.
 
@@ -293,32 +244,12 @@ class VoxelDataAccessor:
         Returns
         -------
         dict[str, numpy.ndarray]
-            Named frames mapping the current world frame to each named frame.
+            Shallow dictionary copy of named frames mapping the current world
+            frame to each named frame. Use `set_affine` and `remove_affine` to
+            update the index; assigning or deleting dictionary entries only
+            changes this copy. Matrix arrays are shared with the index.
         """
         return dict(_require_index(self._obj).named_affines)
-
-    def get_affine(self, name: str) -> np.ndarray:
-        """Return a named affine frame.
-
-        Parameters
-        ----------
-        name : str
-            Frame name.
-
-        Returns
-        -------
-        (4, 4) numpy.ndarray or (*geometry_shape, 4, 4) numpy.ndarray
-            The named frame.
-
-        Raises
-        ------
-        KeyError
-            If `name` is not a stored frame.
-        """
-        index = _require_index(self._obj)
-        if name not in index.named_affines:
-            raise KeyError(f"'{name}' not found among named affines.")
-        return index.named_affines[name]
 
     def set_affine(
         self,
@@ -634,7 +565,7 @@ class VoxelDataAccessor:
             inplace,
         )
 
-    def to(self, other: xr.DataArray, via: str) -> np.ndarray:
+    def get_relative_affine(self, other: xr.DataArray, via: str) -> np.ndarray:
         """Return the affine mapping this world frame into `other`'s.
 
         Parameters
@@ -668,30 +599,20 @@ class VoxelDataAccessor:
         """
         validate_voxeldata(self._obj, **kwargs)
 
-    def canonicalize(self) -> xr.DataArray:
-        """Return a canonical VoxelData array.
-
-        Returns
-        -------
-        xarray.DataArray
-            Canonical form with reinstated core dimensions and canonical order.
-        """
-        return canonicalize_voxeldata(self._obj)
-
-    def ensure(self, **kwargs: Any) -> xr.DataArray:
-        """Canonicalize and validate in one step.
+    def canonicalize(self, **kwargs: Any) -> xr.DataArray:
+        """Return a canonical, validated VoxelData array.
 
         Parameters
         ----------
         **kwargs : Any
-            Forwarded to [ensure_voxeldata][voxeldata.validation.ensure_voxeldata].
+            Forwarded to [canonicalize_voxeldata][voxeldata.validation.canonicalize_voxeldata].
 
         Returns
         -------
         xarray.DataArray
             Canonical, validated VoxelData array.
         """
-        return ensure_voxeldata(self._obj, **kwargs)
+        return canonicalize_voxeldata(self._obj, **kwargs)
 
     def _replace_index(
         self,

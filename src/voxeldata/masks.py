@@ -3,7 +3,7 @@
 import numpy as np
 import xarray as xr
 
-from voxeldata.validation import ensure_voxeldata, validate_voxeldata
+from voxeldata.validation import canonicalize_voxeldata, validate_voxeldata
 
 
 def check_spatial_alignment(
@@ -14,7 +14,7 @@ def check_spatial_alignment(
     Assumes both are already canonical VoxelData arrays (see
     [`validate_voxeldata`][voxeldata.validation.validate_voxeldata]); callers that
     may not be should canonicalize first via
-    [`ensure_voxeldata`][voxeldata.validation.ensure_voxeldata]. `xarray.align` with
+    [`canonicalize_voxeldata`][voxeldata.validation.canonicalize_voxeldata]. `xarray.align` with
     `join="exact"` dispatches to the `VoxelToWorldIndex`'s `equals`, which compares
     both the voxel-space `k`/`j`/`i` coordinates (what `reindex_like`/`stack` actually
     key alignment on) and the underlying `voxel_to_world` affine, so two arrays
@@ -187,7 +187,7 @@ def ensure_mask(
     """Canonicalize `mask` and `data`, then validate that `mask` shares data's grid.
 
     Both `mask` and `data` are canonicalized via
-    [`ensure_voxeldata`][voxeldata.validation.ensure_voxeldata] (restoring any
+    [`canonicalize_voxeldata`][voxeldata.validation.canonicalize_voxeldata] (restoring any
     scalar-reduced voxel dims) before
     [`validate_mask`][voxeldata.masks.validate_mask] checks them.
 
@@ -226,8 +226,8 @@ def ensure_mask(
         grid doesn't match `data`'s, or if `require_exact_dims` is set and `mask`'s
         dimensions don't match `data`'s.
     """
-    mask = ensure_voxeldata(mask, allow_extra_dims=True)
-    data = ensure_voxeldata(data, allow_extra_dims=True)
+    mask = canonicalize_voxeldata(mask, allow_extra_dims=True)
+    data = canonicalize_voxeldata(data, allow_extra_dims=True)
     validate_mask(mask, data, mask_name, require_exact_dims=require_exact_dims)
 
     # Coerce after validation so callers never index with a raw binary numeric
@@ -298,7 +298,7 @@ def ensure_labels(
     """Canonicalize `labels` and `data`, then validate labels share data's grid.
 
     Both `labels` and `data` are canonicalized via
-    [`ensure_voxeldata`][voxeldata.validation.ensure_voxeldata] (restoring any
+    [`canonicalize_voxeldata`][voxeldata.validation.canonicalize_voxeldata] (restoring any
     scalar-reduced voxel dims) before
     [`validate_labels`][voxeldata.masks.validate_labels] checks them.
 
@@ -334,7 +334,7 @@ def ensure_labels(
         If `labels` or `data` isn't a VoxelData array, or if `labels`'s
         voxel grid doesn't match `data`'s.
     """
-    labels = ensure_voxeldata(labels, allow_extra_dims=True)
-    data = ensure_voxeldata(data, allow_extra_dims=True)
+    labels = canonicalize_voxeldata(labels, allow_extra_dims=True)
+    data = canonicalize_voxeldata(data, allow_extra_dims=True)
     validate_labels(labels, data, labels_name)
     return labels

@@ -80,7 +80,7 @@ def test_dataset_roundtrip(multigeometry_data, zarr_store, scalar_selection):
     with vd.load_dataset(path, chunks=None) as actual:
         assert actual.attrs == {"description": "shared grid", "nested": {"value": 5}}
         for name in ("image", "valid"):
-            expected = vd.ensure_voxeldata(source[name])
+            expected = vd.canonicalize_voxeldata(source[name])
             vd.validate_voxeldata(actual[name])
             xr.testing.assert_identical(actual[name], expected)
             assert actual[name].dtype == expected.dtype
@@ -97,7 +97,7 @@ def test_dataset_roundtrip(multigeometry_data, zarr_store, scalar_selection):
             xr.testing.assert_identical(actual[name], expected)
         assert actual["image"].vd.index is actual["valid"].vd.index
     with vd.load_array(path, variable="valid", chunks=None) as actual:
-        xr.testing.assert_identical(actual, vd.ensure_voxeldata(source["valid"]))
+        xr.testing.assert_identical(actual, vd.canonicalize_voxeldata(source["valid"]))
     with xr.open_zarr(path, chunks=None) as raw:
         assert not set(vd.WORLD_DIMS) & set(raw.variables)
 

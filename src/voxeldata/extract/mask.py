@@ -3,7 +3,7 @@
 import xarray as xr
 
 from voxeldata.masks import ensure_mask
-from voxeldata.validation import ensure_voxeldata
+from voxeldata.validation import canonicalize_voxeldata
 
 
 def extract_with_mask(data: xr.DataArray, mask: xr.DataArray) -> xr.DataArray:
@@ -38,7 +38,7 @@ def extract_with_mask(data: xr.DataArray, mask: xr.DataArray) -> xr.DataArray:
     TypeError
         If the mask is not a boolean or binary numeric VoxelData array.
     """
-    data = ensure_voxeldata(data, allow_extra_dims=True)
+    data = canonicalize_voxeldata(data, allow_extra_dims=True)
     mask = ensure_mask(mask, data, "mask")
 
     # ensure_mask() already checked mask and data share the same voxel grid (same

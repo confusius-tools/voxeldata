@@ -100,7 +100,7 @@ changes those labels is also unsupported. This does not affect the explicit
 
 Creation preserves the supplied nonspatial dimension order. For example, both
 `(time, view, k, j, i)` and `(view, time, k, j, i)` are valid.
-`data.vd.canonicalize()` and `data.vd.ensure()` normalize to
+`data.vd.canonicalize()` normalizes and validates, using
 `(...extra_dims, time, k, j, i)`, preserving the relative order of extra
 dimensions and omitting absent `time` dimensions. Canonicalization also
 restores scalar-selected spatial dimensions, but does not restore selected nonspatial dimensions.
@@ -118,6 +118,15 @@ timestamps; uniformity uses a 1% relative tolerance around the median interval.
 Select any additional timestamp dependencies first, even when their intervals
 agree. Missing time coordinates raise `ValueError`. For other dimensions, access
 their coordinates directly rather than treating them as spatial metadata.
+
+Canonicalization and validation use one entry point:
+`canonicalize_voxeldata(data, **validation_options)` or
+`data.vd.canonicalize(**validation_options)`. This replaces the former ensure
+entry points; canonicalization no longer returns unchecked arrays.
+`.vd.get_relative_affine(other, via=...)` returns a matrix, not a transformed
+array. Read named frames with `.vd.affines[name]`; use `set_affine` and
+`remove_affine` for validated updates. Advanced index state is available through
+`.vd.index`, rather than redundant geometry properties on the accessor.
 
 ## World-space transforms
 
@@ -168,9 +177,9 @@ center. Scalar-selected voxel dimensions are restored in non-inplace results.
 | Construction | `create_voxeldata`, `attach_voxel_to_world_index` |
 | Accessor | `data.vd` ([`VoxelDataAccessor`](src/voxeldata/accessors.py)) |
 | Geometry | `get_voxel_to_world_affine`, `get_voxel_to_world_units`, `get_array_origin`, `get_array_spacing`, `get_voxel_to_world_direction_matrix`, `convert_length_units` |
-| Validation | `validate_voxeldata`, `ensure_voxeldata`, `canonicalize_voxeldata` |
+| Validation | `validate_voxeldata`, `canonicalize_voxeldata` |
 | Affine operations | `apply_affine`, `apply_translation`, `apply_rotation`, `apply_zoom`, `apply_flip`, `get_geometry_center`, `reindex_voxels`, `reindex_voxels_like`, `get_bounding_box`, `get_relative_affine` |
-| Named affines | `data.vd.get_affine`, `set_affine`, `remove_affine`, `apply`, `to` |
+| Named affines | `data.vd.affines[name]`, `set_affine`, `remove_affine`, `apply`, `get_relative_affine` |
 | Extraction | `extract_with_mask`, `extract_with_labels`, `unmask` |
 | Persistence | `save`, `load_array`, `load_dataset`, `load_tree` |
 | Masks and labels | `ensure_mask`, `validate_mask`, `ensure_labels`, `validate_labels`, `check_spatial_alignment` |

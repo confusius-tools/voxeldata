@@ -115,7 +115,7 @@ def test_mask_includes_geometry_axes_and_restores_frame_stacks(multigeometry_dat
     )
     mask.data[..., 0, 0, 0] = True
     signals = vd.extract_with_mask(data, mask)
-    canonical_mask = mask.vd.ensure()
+    canonical_mask = mask.vd.canonicalize()
     ordered = data.transpose("channel", *canonical_mask.dims)
     np.testing.assert_array_equal(signals, ordered.values[:, canonical_mask.values])
     restored = vd.unmask(signals, mask)
@@ -126,7 +126,7 @@ def test_mask_includes_geometry_axes_and_restores_frame_stacks(multigeometry_dat
     assert restored.vd.geometry_dims == data.vd.geometry_dims
     np.testing.assert_array_equal(restored.vd.voxel_to_world, data.vd.voxel_to_world)
     for name, frame in data.vd.affines.items():
-        np.testing.assert_array_equal(restored.vd.get_affine(name), frame)
+        np.testing.assert_array_equal(restored.vd.affines[name], frame)
 
 
 def test_shared_mask_rejects_varying_geometry(multigeometry_data):
@@ -181,7 +181,7 @@ def test_unmask_preserves_native_labels_named_frames_and_timestamps(
     for dim in vd.VOXEL_DIMS:
         np.testing.assert_array_equal(restored[dim], mask[dim])
     for name, matrix in named_affines.items():
-        np.testing.assert_array_equal(restored.vd.get_affine(name), matrix)
+        np.testing.assert_array_equal(restored.vd.affines[name], matrix)
     np.testing.assert_array_equal(restored.values.reshape(2, -1), signals)
     assert restored.time.attrs == signals.time.attrs
     assert restored.attrs == {"units": "a.u."}

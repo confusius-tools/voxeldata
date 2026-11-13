@@ -33,7 +33,7 @@ API details belong in `docs/api/` and the README; planned work belongs in
   dependencies before shared-time indexing/analysis. Auxiliary coordinates such
   as `slice_time` remain consumer-defined; do not infer acquisition semantics.
 - Use `create_voxeldata` to construct arrays (provide `spacing` or `voxel_to_world`),
-  `validate_voxeldata` to check them, and `ensure_voxeldata` to canonicalize and
+  `validate_voxeldata` to check them, and `canonicalize_voxeldata` to canonicalize and
   validate. There is no plain-coordinate fallback for operations requiring
   VoxelData. Construction and `.vd.set_voxel_to_world` bootstrap plain arrays.
 

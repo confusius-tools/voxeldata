@@ -54,7 +54,6 @@ from voxeldata.masks import (
 )
 from voxeldata.validation import (
     canonicalize_voxeldata,
-    ensure_voxeldata,
     require_dataarray,
     require_positive_finite,
     validate_voxeldata,
@@ -82,7 +81,6 @@ __all__ = [
     "create_voxeldata",
     "ensure_labels",
     "ensure_mask",
-    "ensure_voxeldata",
     "extract_with_labels",
     "extract_with_mask",
     "get_affine_axis_scalings",

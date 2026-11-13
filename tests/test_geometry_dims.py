@@ -70,7 +70,7 @@ def test_outer_indexing_multiple_geometry_axes(multigeometry_data, indexer):
     expected = data.vd.index.voxel_to_world[indexer][:, [1, 0]]
     np.testing.assert_array_equal(result.vd.index.voxel_to_world, expected)
     np.testing.assert_array_equal(
-        result.vd.get_affine("lab"), data.vd.get_affine("lab")[indexer][:, [1, 0]]
+        result.vd.affines["lab"], data.vd.affines["lab"][indexer][:, [1, 0]]
     )
     for t in range(result.sizes["time"]):
         for v in range(2):
@@ -113,9 +113,7 @@ def test_transpose_rename_copy_and_reconstruction(multigeometry_data):
     result = result.isel(j=1).vd.canonicalize()
     assert result.vd.geometry_dims == ("time", "angle")
     assert result.vd.world_units == "um"
-    np.testing.assert_array_equal(
-        result.vd.get_affine("lab"), data.vd.get_affine("lab")
-    )
+    np.testing.assert_array_equal(result.vd.affines["lab"], data.vd.affines["lab"])
     for d in vd.WORLD_DIMS:
         np.testing.assert_allclose(
             result[d].transpose("time", "angle", "k", "j", "i"), data.isel(j=[1])[d]
@@ -147,8 +145,8 @@ def test_named_composition_with_permuted_dimensions(multigeometry_data, named_af
         geometry_dims=("view", "time"),
         named_affines={"lab": np.broadcast_to(named_affines["atlas"], (2, 3, 4, 4))},
     )
-    expected = np.linalg.inv(named_affines["atlas"]) @ data.vd.get_affine("lab")
-    np.testing.assert_allclose(data.vd.to(other, "lab"), expected)
+    expected = np.linalg.inv(named_affines["atlas"]) @ data.vd.affines["lab"]
+    np.testing.assert_allclose(data.vd.get_relative_affine(other, "lab"), expected)
     action = np.broadcast_to(named_affines["lab"], (2, 3, 4, 4)).copy()
     action[1, :, 0, 3] += 8
     result = data.vd.apply(action, geometry_dims=("view", "time"))
@@ -157,10 +155,10 @@ def test_named_composition_with_permuted_dimensions(multigeometry_data, named_af
         result.vd.index.voxel_to_world, ordered @ data.vd.index.voxel_to_world
     )
     np.testing.assert_allclose(
-        result.vd.get_affine("atlas"), named_affines["atlas"] @ np.linalg.inv(ordered)
+        result.vd.affines["atlas"], named_affines["atlas"] @ np.linalg.inv(ordered)
     )
     rebased = result.vd.apply("lab")
-    np.testing.assert_array_equal(rebased.vd.get_affine("lab"), np.eye(4))
+    np.testing.assert_array_equal(rebased.vd.affines["lab"], np.eye(4))
 
 
 def test_composition_adds_named_geometry_dependency(multigeometry_data):
@@ -174,8 +172,8 @@ def test_composition_adds_named_geometry_dependency(multigeometry_data):
         action[1] @ multigeometry_data.vd.index.voxel_to_world,
     )
     np.testing.assert_allclose(
-        result.vd.get_affine("lab")[:, :, 1],
-        multigeometry_data.vd.get_affine("lab") @ np.linalg.inv(action[1]),
+        result.vd.affines["lab"][:, :, 1],
+        multigeometry_data.vd.affines["lab"] @ np.linalg.inv(action[1]),
     )
 
 
@@ -219,9 +217,7 @@ def test_bounds_and_reindex_without_dense_world_arrays(multigeometry_data):
     np.testing.assert_array_equal(
         restored.vd.index.voxel_to_world, data.vd.index.voxel_to_world
     )
-    np.testing.assert_array_equal(
-        restored.vd.get_affine("lab"), data.vd.get_affine("lab")
-    )
+    np.testing.assert_array_equal(restored.vd.affines["lab"], data.vd.affines["lab"])
 
 
 def test_variable_scalings_are_not_silently_taken_from_first_geometry(
@@ -277,7 +273,7 @@ def test_pickle_roundtrip(multigeometry_data):
         restored.vd.index.voxel_to_world, multigeometry_data.vd.index.voxel_to_world
     )
     np.testing.assert_array_equal(
-        restored.vd.get_affine("lab"), multigeometry_data.vd.get_affine("lab")
+        restored.vd.affines["lab"], multigeometry_data.vd.affines["lab"]
     )
     np.testing.assert_allclose(
         restored.isel(time=2, view=1).z, multigeometry_data.isel(time=2, view=1).z
@@ -291,7 +287,7 @@ def test_concat_along_second_geometry_axis(multigeometry_data):
         result.vd.index.voxel_to_world, multigeometry_data.vd.index.voxel_to_world
     )
     np.testing.assert_array_equal(
-        result.vd.get_affine("lab"), multigeometry_data.vd.get_affine("lab")
+        result.vd.affines["lab"], multigeometry_data.vd.affines["lab"]
     )
 
 
@@ -393,9 +389,9 @@ def test_shared_named_frames_stay_shared_after_shared_action(
     multigeometry_data, named_affines
 ):
     result = multigeometry_data.vd.apply(named_affines["lab"])
-    assert result.vd.get_affine("atlas").shape == (4, 4)
+    assert result.vd.affines["atlas"].shape == (4, 4)
     np.testing.assert_allclose(
-        result.vd.get_affine("atlas"),
+        result.vd.affines["atlas"],
         named_affines["atlas"] @ np.linalg.inv(named_affines["lab"]),
     )
 
@@ -422,7 +418,7 @@ def test_relative_frame_rejects_mismatched_geometry_labels(multigeometry_data):
         named_affines=data.vd.affines,
     )
     with pytest.raises(ValueError, match="same geometry coordinates.*view"):
-        data.vd.to(other, "lab")
+        data.vd.get_relative_affine(other, "lab")
 
 
 def test_scalar_spatial_selection_retains_full_affines_and_frames(multigeometry_data):
@@ -431,9 +427,9 @@ def test_scalar_spatial_selection_retains_full_affines_and_frames(multigeometry_
         selected.vd.index.voxel_to_world, multigeometry_data.vd.index.voxel_to_world[2]
     )
     np.testing.assert_array_equal(
-        selected.vd.get_affine("lab"), multigeometry_data.vd.get_affine("lab")[2]
+        selected.vd.affines["lab"], multigeometry_data.vd.affines["lab"][2]
     )
-    assert selected.vd.fixed_voxel_coords == {"k": 4}
+    assert selected.vd.index.fixed_voxel_coords == {"k": 4}
     np.testing.assert_array_equal(selected.vd.canonicalize().k, [4])
 
 
@@ -478,7 +474,7 @@ def test_multiaxis_world_and_frame_values_against_input_oracles(
     expected_frame = named_affines["lab"].copy()
     expected_frame[:3, 3] += [6, 7, 33]
     np.testing.assert_array_equal(
-        multigeometry_data.isel(time=2, view=1).vd.get_affine("lab"), expected_frame
+        multigeometry_data.isel(time=2, view=1).vd.affines["lab"], expected_frame
     )
 
 

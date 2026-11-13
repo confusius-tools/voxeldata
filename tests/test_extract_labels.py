@@ -120,7 +120,7 @@ class TestWithLabels:
         """`data` with a scalar-reduced voxel dim (e.g. from `.isel(k=0)`) works.
 
         `.isel(k=0)` collapses `k` to a scalar coordinate, dropping the dim itself,
-        which only `ensure_voxeldata` restores -- exercises that
+        which only `canonicalize_voxeldata` restores -- exercises that
         `extract_with_labels` canonicalizes `data` itself rather than relying on
         `ensure_labels`'s internal (and discarded) canonicalization of it.
         """

@@ -32,6 +32,17 @@ all additional timestamp dependencies first, even when their sampling intervals
 agree. Geometry dependencies are independent and need not be selected for `dt`.
 For other dimensions, access coordinates directly.
 
+`.vd.canonicalize(**validation_options)` restores scalar-selected voxel axes,
+normalizes dimension order, and validates the result. There is no separate ensure
+entry point or unchecked canonicalization API. Use `.vd.validate(...)` to check
+an array without changing its dimension order.
+
+`.vd.get_relative_affine(other, via=...)` returns the relative matrix through a
+shared named frame; it does not transform the array. Read frames with
+`.vd.affines[name]`; update them through `set_affine` and `remove_affine`. The
+returned frame dictionary is a shallow copy, not a mutation interface. The actual
+index and advanced selection state remain accessible through `.vd.index`.
+
 `set_voxel_to_world` is the only method that accepts a plain DataArray without an
 existing voxel-to-world index; every other property and method raises `ValueError`
 until geometry is attached.

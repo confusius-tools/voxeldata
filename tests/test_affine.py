@@ -110,7 +110,7 @@ def test_reindex_preserves_samples_world_and_named_frames(
         expected_affine = np.stack([expected_affine, second])
     np.testing.assert_allclose(result.vd.voxel_to_world, expected_affine)
     np.testing.assert_array_equal(result.values, before.values)
-    np.testing.assert_array_equal(result.vd.get_affine("lab"), np.eye(4))
+    np.testing.assert_array_equal(result.vd.affines["lab"], np.eye(4))
     for name in ("z", "y", "x"):
         np.testing.assert_allclose(result.coords[name], before.coords[name])
     if not inplace:

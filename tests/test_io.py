@@ -54,7 +54,7 @@ def store(
 def test_roundtrip(request, fixture, store):
     """Values, coordinates, geometry dependencies, and frames survive storage."""
     source = request.getfixturevalue(fixture)
-    expected = vd.ensure_voxeldata(source)
+    expected = vd.canonicalize_voxeldata(source)
     path, options = store
     vd.save(source, path, **options)
     with vd.load_array(path, chunks=None) as actual:
@@ -97,7 +97,7 @@ def test_ordered_dependencies_native_labels_and_world_coordinates(
         world += affine[1, 2, :3, 3, None, None, None]
         for axis, name in enumerate(("z", "y", "x")):
             assert_allclose(selected[name], world[axis])
-        assert_array_equal(actual.values, vd.ensure_voxeldata(source).values)
+        assert_array_equal(actual.values, vd.canonicalize_voxeldata(source).values)
 
 
 def test_shared_geometry_multiaxis_timestamps(multiaxis_timestamps, store):
@@ -111,7 +111,7 @@ def test_shared_geometry_multiaxis_timestamps(multiaxis_timestamps, store):
     path, options = store
     vd.save(source, path, **options)
     with vd.load_array(path, chunks=None) as actual:
-        xr.testing.assert_identical(actual, vd.ensure_voxeldata(source))
+        xr.testing.assert_identical(actual, vd.canonicalize_voxeldata(source))
         assert actual.vd.geometry_dims == ()
         assert actual.vd.voxel_to_world.shape == (4, 4)
         assert actual.time.attrs == multiaxis_timestamps.attrs
@@ -123,7 +123,7 @@ def test_scalar_selected_voxels_are_restored(sample_voxeldata_3d_oblique, store)
     path, options = store
     vd.save(source, path, **options)
     with vd.load_array(path, chunks=None) as actual:
-        xr.testing.assert_identical(actual, vd.ensure_voxeldata(source))
+        xr.testing.assert_identical(actual, vd.canonicalize_voxeldata(source))
         assert_array_equal(actual.j, [1])
 
 

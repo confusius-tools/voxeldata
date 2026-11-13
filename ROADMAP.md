@@ -44,6 +44,15 @@ API contracts and usage belong in the README and `docs/api/`.
 
 ## Optional future work
 
+### Numerical world-unit conversion
+
+Add an explicit operation that converts world-coordinate units while preserving
+physical geometry, native voxel labels, and lazy signal data. Keep it distinct
+from `.vd.set_world_units()`, which only relabels the unit metadata. Scale both
+the linear and translation parts of voxel-to-world matrices; define named-frame
+target-unit semantics before converting their matrices. Cover round-trip unit
+conversion, shared and stacked geometry, and named-frame consistency.
+
 ### Geometry-axis reindexing
 
 Native Xarray `.reindex()` is unsupported on dimensions listed in

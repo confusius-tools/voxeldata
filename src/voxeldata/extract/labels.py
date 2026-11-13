@@ -8,7 +8,7 @@ import xarray as xr
 
 from voxeldata._dims import VOXEL_DIMS
 from voxeldata.masks import ensure_labels
-from voxeldata.validation import ensure_voxeldata
+from voxeldata.validation import canonicalize_voxeldata
 
 _VALID_REDUCTIONS = frozenset({"mean", "sum", "median", "min", "max", "var", "std"})
 """Valid reduction names accepted by `extract_with_labels`."""
@@ -132,7 +132,7 @@ def extract_with_labels(
     spatial dimensions when needed. Label metadata are evaluated eagerly to
     determine groups. No modality-specific acquisition metadata are required.
     """
-    data = ensure_voxeldata(data, allow_extra_dims=True)
+    data = canonicalize_voxeldata(data, allow_extra_dims=True)
     labels = ensure_labels(labels, data, "labels")
     if tuple(labels.dims) not in (VOXEL_DIMS, ("mask", *VOXEL_DIMS)):
         raise ValueError(

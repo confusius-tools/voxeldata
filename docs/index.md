@@ -59,8 +59,9 @@ never infer geometry axes. Identical affines and varying spatial scales are allo
 `time` represents temporal samples, independently of geometry dependencies.
 
 Creation preserves the input nonspatial dimension order, so both
-`(time, view, k, j, i)` and `(view, time, k, j, i)` are valid. Canonicalization and
-`ensure_voxeldata` normalize to `(...extra_dims, time, k, j, i)`, preserving
+`(time, view, k, j, i)` and `(view, time, k, j, i)` are valid.
+`canonicalize_voxeldata` normalizes and validates, using
+`(...extra_dims, time, k, j, i)`, preserving
 the relative order of extra dimensions and omitting absent `time` dimensions.
 Scalar-selected spatial dimensions are restored, but selected nonspatial dimensions are not.
 
@@ -130,12 +131,12 @@ assert moving.isel(time=0, view=1).vd.geometry_dims == ()
 - **Frames and composition:** named frames live on the index, not in array attrs.
   Each frame is shared `(4, 4)` or has the complete ordered geometry batch shape.
   `.vd.apply(action, geometry_dims=("view",))` aligns action axes by name and may
-  introduce new dependencies. `.vd.to(other, "lab")` aligns frame dependencies by
+  introduce new dependencies. `.vd.get_relative_affine(other, "lab")` aligns frame dependencies by
   name and rejects differing labels/order on shared axes. Returned NumPy batches
   use source dependency order followed by any additional target dependencies.
 - **Geometry helpers:** bounding boxes enclose all grids and reindexing operates
   directly on affine stacks, without generating dense world coordinates.
-  Spatial origin/direction require a selected geometry. Spacing/scalings require
+  Spatial origin/direction require a selected geometry. Spatial spacing queries require
   equal scales across geometries; otherwise select one first. `.vd.origin` and
   `.vd.spacing` describe spatial sampling only (`z/y/x` and `k/j/i`, respectively).
 - **Timing:** a named time DataArray may depend on `time` and any number of

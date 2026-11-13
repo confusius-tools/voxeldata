@@ -112,7 +112,7 @@ def test_canonicalize_restores_scalar_indexed_dimension(
     sliced = sample_voxeldata_3d.isel(j=2)
     assert "j" not in sliced.dims
 
-    restored = vd.ensure_voxeldata(sliced)
+    restored = vd.canonicalize_voxeldata(sliced)
     assert restored.dims == ("k", "j", "i")
     assert restored.sizes["j"] == 1
     np.testing.assert_allclose(restored.coords["y"].isel(k=0, j=0, i=0), 24.0)
@@ -235,7 +235,7 @@ def test_nonspatial_order_and_view_geometry(leading_dims: tuple[str, ...]) -> No
     selected = data.isel(view=1)
     assert not selected.vd.geometry_dims
     np.testing.assert_allclose(selected.vd.voxel_to_world, affines[1])
-    np.testing.assert_allclose(selected.vd.get_affine("reference"), frames[1])
+    np.testing.assert_allclose(selected.vd.affines["reference"], frames[1])
 
     expected_dims = (
         *(dim for dim in leading_dims if dim != "time"),
@@ -244,24 +244,24 @@ def test_nonspatial_order_and_view_geometry(leading_dims: tuple[str, ...]) -> No
         "j",
         "i",
     )
-    for canonical in (data.vd.canonicalize(), data.vd.ensure()):
+    for canonical in (data.vd.canonicalize(), vd.canonicalize_voxeldata(data)):
         assert canonical.dims == expected_dims
         np.testing.assert_array_equal(
             canonical.values, data.transpose(*expected_dims).values
         )
         np.testing.assert_allclose(canonical.vd.voxel_to_world, affines)
-        np.testing.assert_allclose(canonical.vd.get_affine("reference"), frames)
+        np.testing.assert_allclose(canonical.vd.affines["reference"], frames)
         canonical.vd.validate()
         invalid_time = canonical.assign_coords(time=-canonical.coords["time"])
         with pytest.raises(ValueError, match="strictly monotonic-increasing"):
             invalid_time.vd.validate()
 
-    restored = data.isel(j=1).vd.ensure()
+    restored = data.isel(j=1).vd.canonicalize()
     assert restored.dims == expected_dims
     assert restored.sizes["j"] == 1
     np.testing.assert_allclose(restored.coords["y"].isel(view=1, k=0, j=0, i=0), 21.0)
 
-    single_view = selected.vd.ensure()
+    single_view = selected.vd.canonicalize()
     assert "view" not in single_view.dims
     assert not single_view.vd.geometry_dims
     np.testing.assert_allclose(single_view.vd.voxel_to_world, affines[1])
@@ -272,7 +272,7 @@ def test_nonspatial_order_and_view_geometry(leading_dims: tuple[str, ...]) -> No
     assert combined.dims == dims
     np.testing.assert_array_equal(combined.values, values)
     np.testing.assert_allclose(combined.vd.voxel_to_world, affines)
-    np.testing.assert_allclose(combined.vd.get_affine("reference"), frames)
+    np.testing.assert_allclose(combined.vd.affines["reference"], frames)
 
 
 @pytest.mark.parametrize("nview", [1, 2])

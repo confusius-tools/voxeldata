@@ -9,7 +9,7 @@ from voxeldata.geometry import (
     get_voxel_to_world_units,
 )
 from voxeldata.masks import check_mask_dtype
-from voxeldata.validation import ensure_voxeldata
+from voxeldata.validation import canonicalize_voxeldata
 
 
 def unmask(
@@ -62,7 +62,7 @@ def unmask(
     Mask and signal sample ordering must correspond; a `space` MultiIndex is not
     used to realign samples automatically.
     """
-    mask = ensure_voxeldata(mask, allow_extra_dims=True)
+    mask = canonicalize_voxeldata(mask, allow_extra_dims=True)
     check_mask_dtype(mask, "mask")
     mask_values = mask.values
 
