@@ -8,7 +8,7 @@ is enough to make ``data.vd`` available.
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 import xarray as xr
@@ -58,6 +58,109 @@ class VoxelDataAccessor:
 
     def __init__(self, data: xr.DataArray) -> None:
         self._obj = data
+
+    def extract_with_mask(self, mask: xr.DataArray) -> xr.DataArray:
+        """Flatten selected mask samples into a `space` dimension.
+
+        Parameters
+        ----------
+        mask : xarray.DataArray
+            Boolean or binary numeric VoxelData mask on the same physical grid.
+            All mask dimensions are flattened, including extra feature axes.
+
+        Returns
+        -------
+        xarray.DataArray
+            Extracted samples with a `space` MultiIndex of native labels.
+            Dask-backed signal data remain lazy.
+
+        Raises
+        ------
+        TypeError
+            If the mask is not boolean or binary numeric.
+        ValueError
+            If geometry, dimensions, or coordinates are incompatible.
+
+        See Also
+        --------
+        voxeldata.extract.extract_with_mask : Module-level extraction function.
+        """
+        from voxeldata.extract import extract_with_mask
+
+        return extract_with_mask(self._obj, mask)
+
+    def extract_with_labels(
+        self,
+        labels: xr.DataArray,
+        reduction: Literal[
+            "mean", "sum", "median", "min", "max", "var", "std"
+        ] = "mean",
+    ) -> xr.DataArray:
+        """Aggregate samples by integer regions or overlapping mask layers.
+
+        Parameters
+        ----------
+        labels : xarray.DataArray
+            Spatial integer VoxelData label map, optionally stacked along `mask`.
+            Background zero is excluded. Physical grids must agree.
+        reduction : {"mean", "sum", "median", "min", "max", "var", "std"}, default: "mean"
+            Reduction applied to voxel samples in each region.
+
+        Returns
+        -------
+        xarray.DataArray
+            Samples with voxel dimensions replaced by `region`, retaining
+            nonspatial dimensions. Dask-backed signal data remain lazy.
+
+        Raises
+        ------
+        TypeError
+            If labels do not have integer dtype.
+        ValueError
+            If grids, dimensions, reduction, labels, or backend chunks are invalid.
+
+        See Also
+        --------
+        voxeldata.extract.extract_with_labels : Module-level aggregation function.
+        """
+        from voxeldata.extract import extract_with_labels
+
+        return extract_with_labels(self._obj, labels, reduction=reduction)
+
+    def unmask(self, mask: xr.DataArray, fill_value: float = 0.0) -> xr.DataArray:
+        """Reconstruct the full mask grid from positional `space` samples.
+
+        Available on geometry-free signals arrays; the mask supplies the output
+        geometry. No acquisition metadata defaults or validation are applied.
+
+        Parameters
+        ----------
+        mask : xarray.DataArray
+            Original boolean or binary numeric VoxelData mask. Supplies native
+            labels, extra feature axes, units, geometry, and named frames.
+        fill_value : float, default: 0.0
+            Value outside the mask, cast to the signal dtype.
+
+        Returns
+        -------
+        xarray.DataArray
+            Eager reconstructed VoxelData array. Leading signal coordinates and
+            timestamp attributes are preserved; samples are not label-realigned.
+
+        Raises
+        ------
+        TypeError
+            If the mask is not boolean or binary numeric.
+        ValueError
+            If mask geometry or signal dimensions/count are invalid.
+
+        See Also
+        --------
+        voxeldata.extract.unmask : Module-level reconstruction function.
+        """
+        from voxeldata.extract import unmask
+
+        return unmask(self._obj, mask, fill_value=fill_value)
 
     @property
     def index(self) -> VoxelToWorldIndex:
@@ -317,8 +420,10 @@ class VoxelDataAccessor:
     ) -> xr.DataArray:
         """Attach a new voxel-to-world affine.
 
-        This is the only operation allowed on a plain DataArray (one without a
-        voxel-to-world index). If the DataArray already carries named affine
+        This bootstraps geometry on a plain DataArray (one without a
+        voxel-to-world index). Reconstruction through `.vd.unmask` also
+        accepts geometry-free signals, using the mask's geometry instead.
+        If the DataArray already carries named affine
         frames and `named_affines` is not provided, those frames are dropped with a
         warning: they are expressed relative to the old world frame and cannot be
         carried over automatically. Use `apply` to change the world frame while

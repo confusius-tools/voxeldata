@@ -39,7 +39,10 @@ API details belong in `docs/api/` and the README; planned work belongs in
 
 ### Geometry and extraction contracts
 
-- Keep the flat `.vd` accessor: no nested `.vd.affine` or `.voxeldata` alias.
+- Keep geometry on the flat `.vd` accessor: no nested `.vd.affine` or `.voxeldata`
+  alias. Generic extraction is also flat: `.vd.extract_with_mask`,
+  `.vd.extract_with_labels`, and `.vd.unmask`. Reconstruction is available on
+  geometry-free signals using a VoxelData mask.
   Mutators default to `inplace=False`; `inplace=True` returns the updated original.
   `.vd.origin`/`.vd.spacing` describe only spatial geometry (`z/y/x` world origin
   and `k/j/i` physical sample spacing). `.vd.dt` reports shared time sampling;

@@ -43,8 +43,10 @@ shared named frame; it does not transform the array. Read frames with
 returned frame dictionary is a shallow copy, not a mutation interface. The actual
 index and advanced selection state remain accessible through `.vd.index`.
 
-`set_voxel_to_world` is the only method that accepts a plain DataArray without an
-existing voxel-to-world index; every other property and method raises `ValueError`
-until geometry is attached.
+Geometry operations require a voxel-to-world index; `set_voxel_to_world`
+bootstraps one on a plain DataArray. Extraction and label aggregation use
+`.vd.extract_with_mask(...)` and `.vd.extract_with_labels(...)`. Reconstruction
+is available on geometry-free signals through `.vd.unmask(mask)`, using the
+VoxelData mask's output geometry.
 
 ::: voxeldata.accessors

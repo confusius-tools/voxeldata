@@ -180,7 +180,7 @@ center. Scalar-selected voxel dimensions are restored in non-inplace results.
 | Validation | `validate_voxeldata`, `canonicalize_voxeldata` |
 | Affine operations | `apply_affine`, `apply_translation`, `apply_rotation`, `apply_zoom`, `apply_flip`, `get_geometry_center`, `reindex_voxels`, `reindex_voxels_like`, `get_bounding_box`, `get_relative_affine` |
 | Named affines | `data.vd.affines[name]`, `set_affine`, `remove_affine`, `apply`, `get_relative_affine` |
-| Extraction | `extract_with_mask`, `extract_with_labels`, `unmask` |
+| Extraction | `.vd.extract_with_mask`, `.vd.extract_with_labels`, `.vd.unmask`; functions `extract_with_mask`, `extract_with_labels`, `unmask` |
 | Persistence | `save`, `load_array`, `load_dataset`, `load_tree` |
 | Masks and labels | `ensure_mask`, `validate_mask`, `ensure_labels`, `validate_labels`, `check_spatial_alignment` |
 
@@ -202,9 +202,9 @@ uv add 'voxeldata[all]'
 `all` includes optional runtime features, not development tools.
 
 ```python
-signals = vd.extract_with_mask(data, mask)  # (..., space), selected native labels.
+signals = data.vd.extract_with_mask(mask)  # (..., space), selected native labels.
 regions = vd.extract_with_labels(data, labels, reduction="mean")  # (..., region).
-restored = vd.unmask(signals, mask)         # Rebuild the mask's full spatial grid.
+restored = signals.vd.unmask(mask) # Rebuild the mask's full spatial grid.
 ```
 
 Masks/labels must share the physical voxel grid. Select varying geometry before

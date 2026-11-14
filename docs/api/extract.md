@@ -6,7 +6,8 @@ icon: lucide/filter
 
 Extraction is modality-independent: it needs voxel geometry, native labels, and a
 mask or label map—not fUSI acquisition metadata. The functions are available from
-`voxeldata.extract` and directly from `voxeldata`.
+`voxeldata.extract`, directly from `voxeldata`, and through the flat `.vd`
+methods `extract_with_mask`, `extract_with_labels`, and `unmask`.
 
 ## Installation
 
@@ -50,9 +51,15 @@ mask = vd.create_voxeldata(
     np.ones((2, 3, 4), dtype=bool), dims=("k", "j", "i"),
     voxel_to_world=data.vd.voxel_to_world,
 )
-signals = vd.extract_with_mask(data, mask)  # (time, space).
-restored = vd.unmask(signals, mask)         # (time, k, j, i).
+signals = data.vd.extract_with_mask(mask)  # (time, space).
+restored = signals.vd.unmask(mask)         # (time, k, j, i).
+# Label aggregation: data.vd.extract_with_labels(labels, reduction="mean").
 ```
+
+The accessor delegates to the same module-level functions. Reconstruction is
+available on geometry-free signals through `signals.vd.unmask(mask)`;
+the mask supplies the output geometry. Extraction still requires VoxelData inputs
+and matching physical grids.
 
 - Mask extraction retains selected native voxel labels in a `space` MultiIndex.
   A partial `.unstack("space")` reconstructs their bounding grid; `unmask` restores
