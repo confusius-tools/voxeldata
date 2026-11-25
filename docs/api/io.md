@@ -29,6 +29,11 @@ scalar-selected voxel dimensions and canonicalizes dimension order as
 validated VoxelData. Shared geometry stays shared regardless of timestamp or other
 nonspatial dimensions.
 
+For a DataArray, pass `preserve_dim_order=True` to both `save` and `load_array`
+to keep leading axes in acquisition order on disk and on reload. Native spatial
+axes still end in `(k, j, i)`. Auxiliary coordinates keep their own dimension order,
+including timestamps whose axes differ from the signal.
+
 ## Dataset and tree conventions
 
 These are conventions for ordinary Xarray containers, not wrapper classes:

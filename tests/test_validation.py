@@ -36,6 +36,7 @@ def test_extra_dimensions_are_optional_and_can_be_forbidden(
         ([0, 0.5, np.inf, 1.5], "non-finite"),
         ([0, 0.5, 0.5, 1.5], "monotonic-increasing"),
         ([1.5, 1, 0.5, 0], "monotonic-increasing"),
+        (np.array([3, 2, 1, 0], dtype=np.uint8), "monotonic-increasing"),
         (["a", "b", "c", "d"], "numeric"),
     ],
 )
@@ -242,3 +243,13 @@ def test_dtype_validation(sample_voxeldata_3d: xr.DataArray) -> None:
     vd.validate_voxeldata(sample_voxeldata_3d, require_dtype=np.floating)
     with pytest.raises(TypeError, match="dtype"):
         vd.validate_voxeldata(sample_voxeldata_3d, require_dtype=np.integer)
+
+
+def test_regular_spacing_uses_requested_spatial_tolerance():
+    data = vd.create_voxeldata([1, 2, 3], dims=("i",), i=[0, 10, 21], spacing=(1, 1, 1))
+    data.vd.validate(require_regular_spacing=True, regular_spacing_tolerance=0.1)
+    fine = vd.create_voxeldata(
+        [1, 2, 3], dims=("i",), i=[0, 100, 201], spacing=(1, 1, 1)
+    )
+    with pytest.raises(ValueError, match="regular spacing"):
+        fine.vd.validate(require_regular_spacing=True, regular_spacing_tolerance=0)

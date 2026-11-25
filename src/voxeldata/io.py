@@ -109,7 +109,11 @@ def _make_attrs_zarr_safe(attrs: dict[Any, Any]) -> dict[Any, Any]:
 
 
 def save(
-    data: xr.DataArray | xr.Dataset | xr.DataTree, path: str | Path, **kwargs: Any
+    data: xr.DataArray | xr.Dataset | xr.DataTree,
+    path: str | Path,
+    *,
+    preserve_dim_order: bool = False,
+    **kwargs: Any,
 ) -> Any:
     """Save a VoxelData array, dataset, or tree.
 
@@ -125,6 +129,10 @@ def save(
         variables are canonicalized before saving without mutating the input.
     path : str or pathlib.Path
         Output path ending in `.zarr`, `.nc`, or `.netcdf`.
+    preserve_dim_order : bool, default: False
+        Whether to retain a DataArray’s leading dimension order on disk. Native
+        voxel dimensions are always restored and placed last. Applies to array
+        writes only.
     **kwargs : Any
         Arguments forwarded to the corresponding Xarray writer, including
         overwrite modes, encoding, engine, and `compute`. Tree encoding is keyed
@@ -178,8 +186,11 @@ def save(
         raise TypeError("Expected an xarray.DataArray, Dataset, or DataTree.")
     if storage_format == "netcdf" and not isinstance(data, xr.DataArray):
         raise TypeError("VoxelData dataset and tree I/O supports Zarr only.")
+    if preserve_dim_order and not isinstance(data, xr.DataArray):
+        raise ValueError("preserve_dim_order applies to DataArray writes only.")
     if isinstance(data, xr.DataArray):
-        prepared = _serialize_array(canonicalize_voxeldata(data), storage_format)
+        prepared = canonicalize_voxeldata(data, preserve_dim_order=preserve_dim_order)
+        prepared = _serialize_array(prepared, storage_format)
         if storage_format == "netcdf":
             return prepared.to_netcdf(path, **kwargs)
         _sanitize_zarr_attrs(prepared)
@@ -199,7 +210,11 @@ def save(
 
 
 def load_array(
-    path: str | Path, variable: str | None = None, **kwargs: Any
+    path: str | Path,
+    variable: str | None = None,
+    *,
+    preserve_dim_order: bool = False,
+    **kwargs: Any,
 ) -> xr.DataArray:
     """Open a saved VoxelData array and rebuild its spatial index.
 
@@ -210,6 +225,9 @@ def load_array(
     variable : str, optional
         Data variable to read. Required for datasets containing multiple data
         variables; a single variable is selected automatically.
+    preserve_dim_order : bool, default: False
+        Whether to retain the stored order of nonspatial dimensions. Native
+        voxel dimensions are always restored and placed last.
     **kwargs : Any
         Arguments forwarded to `xarray.open_zarr` or `xarray.open_dataset`,
         including `chunks` and `engine`. By default, use storage-aligned Dask
@@ -255,7 +273,9 @@ def load_array(
         # Match Xarray's open_dataarray convention for unnamed or conflicting names.
         if data.name == "__xarray_dataarray_variable__":
             data = data.rename(dataset.attrs.get("__xarray_dataarray_name__"))
-        data = _restore_array(data, storage_format)
+        data = _restore_array(
+            data, storage_format, preserve_dim_order=preserve_dim_order
+        )
     except BaseException:
         dataset.close()
         raise
@@ -385,7 +405,10 @@ def _serialize_array(
 
 
 def _restore_array(
-    data: xr.DataArray, storage_format: Literal["zarr", "netcdf"]
+    data: xr.DataArray,
+    storage_format: Literal["zarr", "netcdf"],
+    *,
+    preserve_dim_order: bool = False,
 ) -> xr.DataArray:
     """Rebuild and validate an array using its persisted geometry metadata.
 
@@ -395,6 +418,8 @@ def _restore_array(
         Stored array.
     storage_format : {"zarr", "netcdf"}
         Source format.
+    preserve_dim_order : bool, default: False
+        Whether to keep the stored order of nonspatial dimensions.
 
     Returns
     -------
@@ -445,7 +470,7 @@ def _restore_array(
         named_affines=frames,
         geometry_dims=None if geometry_dims is None else tuple(geometry_dims),
     )
-    return canonicalize_voxeldata(data)
+    return canonicalize_voxeldata(data, preserve_dim_order=preserve_dim_order)
 
 
 def _sanitize_zarr_attrs(data: xr.DataArray | xr.Dataset) -> None:

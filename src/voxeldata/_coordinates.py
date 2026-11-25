@@ -8,7 +8,7 @@ import xarray as xr
 
 
 def get_representative_step(
-    values: npt.NDArray[np.floating], uniformity_tolerance: float = 1e-2
+    values: npt.NDArray[np.integer | np.floating], uniformity_tolerance: float = 1e-2
 ) -> tuple[float | None, bool]:
     """Return a representative step size for a 1D coordinate array.
 
@@ -35,7 +35,13 @@ def get_representative_step(
     if len(values) < 2:
         return None, False
 
-    diffs = np.diff(values)
+    # Subtract before converting to float so large integer labels a unit apart
+    # remain distinct. Widen integer operands to prevent wraparound on reversal.
+    if np.issubdtype(values.dtype, np.integer):
+        wide_type = np.int64 if values.dtype.itemsize < 8 else object
+        diffs = np.diff(values.astype(wide_type)).astype(np.float64)
+    else:
+        diffs = np.diff(values)
     median = float(np.median(diffs))
     if np.isclose(median, 0.0):
         is_uniform = bool(np.isclose(np.max(diffs), np.min(diffs)))

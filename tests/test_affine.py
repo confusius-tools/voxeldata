@@ -201,3 +201,16 @@ def test_shared_rotation_applies_to_every_grid(
     np.testing.assert_allclose(origins, [-15, 5])
     np.testing.assert_allclose(result.coords["y"].isel(k=0, j=0, i=0), [17, 117])
     np.testing.assert_array_equal(result.values, sample_voxeldata_views.values)
+
+
+def test_reindex_and_bounds_preserve_descending_unsigned_axis():
+    data = vd.create_voxeldata(
+        [10, 20, 30],
+        dims=("i",),
+        i=np.array([2, 1, 0], dtype=np.uint8),
+        voxel_to_world=np.eye(4),
+    )
+    assert data.vd.bounding_box["x"] == (-0.5, 2.5)
+    reindexed = data.vd.reindex_voxels()
+    np.testing.assert_array_equal(reindexed.i, [0, 1, 2])
+    np.testing.assert_array_equal(reindexed.x.values.ravel(), [2, 1, 0])

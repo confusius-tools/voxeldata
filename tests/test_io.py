@@ -351,3 +351,25 @@ def test_invalid_geometry_metadata(
     dataset.to_netcdf(path)
     with pytest.raises(error, match=message):
         vd.load_array(path)
+
+
+def test_preserve_dim_order_on_disk_and_load(multiaxis_timestamps, store):
+    source = vd.create_voxeldata(
+        np.arange(12).reshape(3, 2, 2, 1, 1, 1),
+        dims=("time", "view", "channel", "k", "j", "i"),
+        time=multiaxis_timestamps,
+        spacing=(1, 1, 1),
+        name="signal",
+    )
+    source = source.assign_coords(time=source.time.transpose("channel", "time", "view"))
+    path, options = store
+    vd.save(source, path, preserve_dim_order=True, **options)
+    opener = xr.open_zarr if path.suffix == ".zarr" else xr.open_dataset
+    with opener(path, chunks=None) as raw:
+        assert raw.signal.dims == source.dims
+        assert_array_equal(raw.signal, source)
+    with vd.load_array(path, preserve_dim_order=True) as result:
+        assert result.dims == source.dims
+        assert_array_equal(result, source)
+        assert result.time.dims == source.time.dims
+        assert_array_equal(result.time, source.time)

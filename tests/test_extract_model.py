@@ -230,3 +230,24 @@ def test_spatial_units_checked(sample_voxeldata_3dt, make_sample_voxeldata_mask)
     mask = make_sample_voxeldata_mask().vd.set_world_units("cm")
     with pytest.raises(ValueError, match="spatial units differ"):
         vd.extract_with_mask(sample_voxeldata_3dt, mask)
+
+
+def test_shared_affine_mask_checks_common_feature_labels_before_flattening():
+    data = vd.create_voxeldata(
+        [10, 20],
+        dims=("view",),
+        extra_coords={"view": [10, 20]},
+        voxel_to_world=np.stack([np.eye(4)] * 2),
+        geometry_dims=("view",),
+    )
+    mask = vd.create_voxeldata(
+        [True, False],
+        dims=("view",),
+        extra_coords={"view": [20, 10]},
+        voxel_to_world=np.eye(4),
+    )
+    with pytest.raises(ValueError, match="view.*labels differ"):
+        data.vd.extract_with_mask(mask)
+    np.testing.assert_array_equal(
+        data.vd.extract_with_mask(mask.sel(view=[10, 20])), [20]
+    )

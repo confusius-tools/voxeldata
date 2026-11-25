@@ -170,7 +170,7 @@ def _validate_dimension_coordinate(
             raise ValueError(f"Coordinate {dim!r} contains non-finite numeric values.")
         if values.shape[0] <= 1:
             return
-        if not np.all(np.diff(values, axis=0) > 0):
+        if not np.all(values[1:] > values[:-1]):
             raise ValueError(
                 f"Coordinate {dim!r} must be strictly monotonic-increasing for "
                 "every timestamp series."
@@ -193,13 +193,13 @@ def _validate_dimension_coordinate(
         raise ValueError(f"Coordinate {dim!r} contains non-finite numeric values.")
     if values.size <= 1:
         return
-    diffs = np.diff(values)
+    increasing = np.all(values[1:] > values[:-1])
     if require_ascending:
-        if not np.all(diffs > 0):
+        if not increasing:
             raise ValueError(
                 f"Coordinate {dim!r} must be strictly monotonic-increasing."
             )
-    elif not (np.all(diffs > 0) or np.all(diffs < 0)):
+    elif not increasing and not np.all(values[1:] < values[:-1]):
         raise ValueError(f"Coordinate {dim!r} must be strictly monotonic.")
 
 
@@ -327,7 +327,9 @@ def _validate_regular_spacing(
         if dim in spatial_dims:
             # Affines preserve regularity along native axes, even when scales vary
             # between geometries. A scalar spacing query would reject valid stacks.
-            step, approximate = get_representative_step(coord.values)
+            step, approximate = get_representative_step(
+                coord.values, regular_spacing_tolerance
+            )
             spacing_value = None if approximate else (1.0 if step is None else step)
         else:
             spacing_value = get_coordinate_spacing_info(
@@ -369,13 +371,15 @@ def _validate_uniform_time(da: xr.DataArray, tolerance: float) -> None:
         raise ValueError("'time' coordinate must be uniformly spaced.")
 
 
-def canonicalize_voxeldata(data: xr.DataArray, **validate_kwargs: Any) -> xr.DataArray:
+def canonicalize_voxeldata(
+    data: xr.DataArray, *, preserve_dim_order: bool = False, **validate_kwargs: Any
+) -> xr.DataArray:
     """Return a canonical, validated VoxelData array.
 
     Scalar indexing such as `data.isel(j=0)` removes `j` from the array dimensions
     but retains it as a scalar coordinate. This function restores every missing
     native voxel dimension (`k`, `j`, `i`) as a length-one dimension, rebuilds
-    voxel-to-world geometry from the untouched affine, then orders dimensions as
+    voxel-to-world geometry from the untouched affine, then by default orders dimensions as
     `(...extra_dims, time, k, j, i)`. Extra dimensions retain their relative
     order. Missing nonspatial dimensions are not restored. The normalized result
     is validated with [validate_voxeldata][voxeldata.validation.validate_voxeldata].
@@ -384,6 +388,9 @@ def canonicalize_voxeldata(data: xr.DataArray, **validate_kwargs: Any) -> xr.Dat
     ----------
     data : xarray.DataArray
         DataArray to canonicalize and validate.
+    preserve_dim_order : bool, default: False
+        Whether to keep the input order of all leading dimensions and retain
+        coordinates' own dimension order. Native voxel axes are always placed last.
     **validate_kwargs : Any
         Keyword arguments forwarded to
         [validate_voxeldata][voxeldata.validation.validate_voxeldata].
@@ -432,9 +439,11 @@ def canonicalize_voxeldata(data: xr.DataArray, **validate_kwargs: Any) -> xr.Dat
         result.coords[dim].attrs.update(attrs)
 
     result = restore_voxel_to_world_index(result)
+    trailing = VOXEL_DIMS if preserve_dim_order else CORE_DIMS
     result = result.transpose(
-        *(dim for dim in result.dims if dim not in CORE_DIMS),
-        *(dim for dim in CORE_DIMS if dim in result.dims),
+        *(dim for dim in result.dims if dim not in trailing),
+        *(dim for dim in trailing if dim in result.dims),
+        transpose_coords=not preserve_dim_order,
     )
     validate_voxeldata(result, **validate_kwargs)
     return result

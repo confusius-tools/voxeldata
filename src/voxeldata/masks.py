@@ -45,6 +45,15 @@ def check_spatial_alignment(
         index = array.vd.index
         shared = geometry_dims[position] - geometry_dims[1 - position]
         for dim in shared:
+            # Collapsing constant geometry below removes the ordinary dimension
+            # index too. Verify sample correspondence before losing those labels.
+            other = arrays[1 - position]
+            if dim in other.dims and not array.get_index(dim).equals(
+                other.get_index(dim)
+            ):
+                raise ValueError(
+                    f"{name} does not share data's voxel grid: {dim!r} labels differ."
+                )
             first = np.take(
                 index.voxel_to_world, [0], axis=index.geometry_dims.index(dim)
             )

@@ -340,7 +340,12 @@ def test_store_protection_and_delayed_errors(sample_voxeldata_3d, zarr_store, tr
         vd.save(source, path, compute=False, **options)
     with vd.load_array(path, group="images" if tree else None) as actual:
         xr.testing.assert_identical(actual, sample_voxeldata_3d)
-    for kwargs in ({"mode": "a"}, {"append_dim": "time"}, {"region": "auto"}):
+    incremental_options: tuple[dict[str, Any], ...] = (
+        {"mode": "a"},
+        {"append_dim": "time"},
+        {"region": "auto"},
+    )
+    for kwargs in incremental_options:
         with pytest.raises(ValueError, match="Incremental Zarr writes"):
             vd.save(source, path, **kwargs)
 
