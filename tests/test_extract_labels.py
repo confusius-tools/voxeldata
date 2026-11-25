@@ -1,6 +1,5 @@
 """Tests for extract.extract_with_labels."""
 
-import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
@@ -213,6 +212,8 @@ class TestWithLabels:
     @pytest.mark.usefixtures("label_backend")
     def test_dask_laziness(self):
         """Test that the result is lazy when the input is a Dask-backed array."""
+        da = pytest.importorskip("dask.array")
+
         rng = np.random.default_rng(0)
         data_vals = rng.random((10, 3, 4, 5))
         labels_data = np.zeros((3, 4, 5), dtype=int)
@@ -261,30 +262,17 @@ class TestWithLabels:
         )
 
     @pytest.mark.usefixtures("label_backend")
-    def test_stacked_masks_overlapping(self, sample_voxeldata_3dt):
-        """Test extraction with overlapping stacked masks."""
-        _, nz, ny, nx = sample_voxeldata_3dt.shape
-
-        # Region "A": k-slices 0 and 1; Region "B": k-slices 1 and 2 — k=1 overlaps.
-        mask_data = np.zeros((2, nz, ny, nx), dtype=int)
-        mask_data[0, 0:2, :, :] = 1  # Region "A": slices 0–1.
-        mask_data[1, 1:3, :, :] = 2  # Region "B": slices 1–2.
-        labels = _labels_like(
-            mask_data, ("mask", "k", "j", "i"), sample_voxeldata_3dt
+    def test_stacked_masks_overlapping(self):
+        """The shared voxel contributes to both means and background to neither."""
+        data = _canonical(np.array([2, 8, 20, 100]), ("i",))
+        labels = _canonical(
+            np.array([[1, 1, 0, 0], [0, 2, 2, 0]]), ("mask", "i")
         ).assign_coords(mask=["A", "B"])
 
-        result = extract.extract_with_labels(sample_voxeldata_3dt, labels)
+        result = extract.extract_with_labels(data, labels)
 
-        assert result.dims == ("time", "region")
-        np.testing.assert_array_equal(result.coords["region"].values, ["A", "B"])
-        np.testing.assert_allclose(
-            result.sel(region="A").values,
-            sample_voxeldata_3dt.values[:, 0:2, :, :].mean(axis=(-3, -2, -1)),
-        )
-        np.testing.assert_allclose(
-            result.sel(region="B").values,
-            sample_voxeldata_3dt.values[:, 1:3, :, :].mean(axis=(-3, -2, -1)),
-        )
+        np.testing.assert_array_equal(result.region, ["A", "B"])
+        np.testing.assert_allclose(result, [5, 14])
 
     @pytest.mark.usefixtures("label_backend")
     def test_stacked_masks_duplicate_ids_non_overlapping(self, sample_voxeldata_3dt):
@@ -359,6 +347,8 @@ class TestWithLabels:
     @pytest.mark.usefixtures("label_backend")
     def test_dask_spatial_chunks(self):
         """Test correctness when spatial dims are chunked in the Dask array."""
+        da = pytest.importorskip("dask.array")
+
         rng = np.random.default_rng(42)
         data_vals = rng.random((10, 3, 4, 5))
         labels_data = np.zeros((3, 4, 5), dtype=int)
@@ -383,6 +373,8 @@ class TestWithLabels:
         Regression test for: flox raises ValueError when the groupby array is a
         Dask array and expected_groups is not provided.
         """
+        da = pytest.importorskip("dask.array")
+
         rng = np.random.default_rng(0)
         data_vals = rng.random((10, 3, 4, 5))
         labels_data = np.zeros((3, 4, 5), dtype=int)

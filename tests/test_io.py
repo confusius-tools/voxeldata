@@ -1,15 +1,14 @@
 """Persistence tests through the public load_array/save API."""
 
 import json
+from contextlib import nullcontext
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
-import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
-from dask import delayed
-from dask.callbacks import Callback
 from numpy.testing import assert_allclose, assert_array_equal
 
 import voxeldata as vd
@@ -36,7 +35,9 @@ def store(
         Xarray writer options.
     """
     if request.param == "netcdf":
+        pytest.importorskip("h5netcdf")
         return tmp_path / "data.nc", {"engine": "h5netcdf"}
+    pytest.importorskip("zarr")
     return tmp_path / "data.zarr", {"zarr_format": int(request.param[-1])}
 
 
@@ -162,6 +163,9 @@ def test_unnamed_array(sample_voxeldata_3d, store):
 
 def test_lazy_load_and_deferred_save(sample_voxeldata_3d, store):
     """A deferred save does not evaluate the signal, and chunked loading stays lazy."""
+    da = pytest.importorskip("dask.array")
+    from dask import delayed
+
     calls = []
 
     @delayed
@@ -182,10 +186,7 @@ def test_lazy_load_and_deferred_save(sample_voxeldata_3d, store):
         assert_array_equal(actual.compute(), np.arange(24).reshape(2, 3, 4))
 
 
-@pytest.mark.parametrize("dask_available", [False, True])
-def test_default_loading_uses_available_backend(
-    sample_voxeldata_3d, store, monkeypatch, dask_available
-):
+def test_default_loading_uses_available_backend(sample_voxeldata_3d, store):
     """Default loading uses storage chunks with Dask, or backend indexing without it."""
     path, options = store
     encoding_key = "chunks" if path.suffix == ".zarr" else "chunksizes"
@@ -195,24 +196,26 @@ def test_default_loading_uses_available_backend(
         encoding={"intensity": {encoding_key: (1, 3, 4)}},
         **options,
     )
-    if not dask_available:
-        monkeypatch.setattr("voxeldata.io.find_spec", lambda name: None)
-    tasks = []
-    with Callback(pretask=lambda *args: tasks.append(args)):
+    if find_spec("dask") is None:
+        monitor = nullcontext()
+        expected_chunks = None
+    else:
+        from dask.callbacks import Callback
+
+        monitor = Callback(pretask=lambda *args: pytest.fail("Signal data computed"))
+        expected_chunks = ((1, 1), (3,), (4,))
+    with monitor:
         actual = vd.load_array(path)
     with actual:
-        assert tasks == []
-        if dask_available:
-            assert isinstance(actual.data, da.Array)
-            assert actual.chunks == ((1, 1), (3,), (4,))
-        else:
-            assert actual.chunks is None
+        assert actual.chunks == expected_chunks
         assert_array_equal(actual.isel(k=1), sample_voxeldata_3d.isel(k=1))
 
 
 @pytest.mark.parametrize("chunks", [None, {"k": 2}])
 def test_explicit_loading_chunks_are_preserved(sample_voxeldata_3d, store, chunks):
     """Explicit chunks opt out of Dask or override automatic storage chunking."""
+    if chunks is not None:
+        pytest.importorskip("dask.array")
     path, options = store
     encoding_key = "chunks" if path.suffix == ".zarr" else "chunksizes"
     vd.save(
@@ -225,13 +228,13 @@ def test_explicit_loading_chunks_are_preserved(sample_voxeldata_3d, store, chunk
         if chunks is None:
             assert actual.chunks is None
         else:
-            assert isinstance(actual.data, da.Array)
             assert actual.chunks == ((2,), (3,), (4,))
         assert_array_equal(actual, sample_voxeldata_3d)
 
 
 def test_zarr_numpy_attrs_and_unsupported_objects(sample_voxeldata_3d, tmp_path):
     """NumPy metadata is converted while unsupported objects trigger a warning."""
+    pytest.importorskip("zarr")
     source = sample_voxeldata_3d.assign_attrs(
         nested={"array": np.arange(3), "scalar": np.int64(4)}, unsupported=object()
     )
@@ -251,6 +254,7 @@ def test_zarr_numpy_attrs_and_unsupported_objects(sample_voxeldata_3d, tmp_path)
 @pytest.mark.parametrize("suffix", [".nc", ".netcdf", ".source.zarr"])
 def test_extensions(sample_voxeldata_3d, tmp_path, suffix):
     """All documented suffixes dispatch to their backend."""
+    pytest.importorskip("zarr" if suffix.endswith(".zarr") else "h5netcdf")
     path = tmp_path / f"data{suffix}"
     vd.save(sample_voxeldata_3d, path)
     with vd.load_array(path, chunks=None) as actual:
@@ -269,6 +273,7 @@ def test_extensions(sample_voxeldata_3d, tmp_path, suffix):
 )
 def test_incremental_zarr_writes_rejected(sample_voxeldata_3d, tmp_path, options):
     """Incremental saves cannot silently replace the full store's geometry."""
+    pytest.importorskip("zarr")
     path = tmp_path / "data.zarr"
     vd.save(sample_voxeldata_3d, path)
     changed = sample_voxeldata_3d.vd.set_voxel_to_world(np.eye(4))
@@ -343,6 +348,7 @@ def test_invalid_geometry_metadata(
     sample_voxeldata_3d, tmp_path, key, value, error, message
 ):
     """Malformed or inconsistent persisted geometry is rejected on loading."""
+    pytest.importorskip("h5netcdf")
     path = tmp_path / "broken.nc"
     vd.save(sample_voxeldata_3d, path)
     with xr.open_dataset(path) as dataset:

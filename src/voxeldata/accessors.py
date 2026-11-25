@@ -59,7 +59,9 @@ class VoxelDataAccessor:
     def __init__(self, data: xr.DataArray) -> None:
         self._obj = data
 
-    def extract_with_mask(self, mask: xr.DataArray) -> xr.DataArray:
+    def extract_with_mask(
+        self, mask: xr.DataArray, *, join: Literal["exact", "inner"] = "exact"
+    ) -> xr.DataArray:
         """Flatten selected mask samples into a `space` dimension.
 
         Parameters
@@ -67,6 +69,9 @@ class VoxelDataAccessor:
         mask : xarray.DataArray
             Boolean or binary numeric VoxelData mask on the same physical grid.
             All mask dimensions are flattened, including extra feature axes.
+        join : {"exact", "inner"}, default: "exact"
+            How to match labels in mask order. Use `"exact"` for equal sets or
+            `"inner"` to extract only overlapping labels on each indexed axis.
 
         Returns
         -------
@@ -87,7 +92,7 @@ class VoxelDataAccessor:
         """
         from voxeldata.extract import extract_with_mask
 
-        return extract_with_mask(self._obj, mask)
+        return extract_with_mask(self._obj, mask, join=join)
 
     def extract_with_labels(
         self,

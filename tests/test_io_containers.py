@@ -5,13 +5,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-import dask
-import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
-from dask import delayed
-from dask.callbacks import Callback
 from numpy.testing import assert_allclose, assert_array_equal
 
 import voxeldata as vd
@@ -37,6 +33,7 @@ def zarr_store(
     options : dict
         Writer options.
     """
+    pytest.importorskip("zarr")
     return tmp_path / "results.zarr", {"zarr_format": request.param}
 
 
@@ -219,6 +216,7 @@ def test_spatial_ancestors_rejected(sample_voxeldata_3d, tmp_path):
 )
 def test_invalid_stored_dataset_rejected(sample_voxeldata_3dt, tmp_path, metadata):
     """Restoration rejects missing metadata and incompatible per-variable grids."""
+    pytest.importorskip("zarr")
     path = tmp_path / "invalid.zarr"
     source = xr.Dataset(
         {"image": sample_voxeldata_3dt, "valid": sample_voxeldata_3dt > 0}
@@ -255,6 +253,11 @@ def test_shared_chunk_execution_and_streaming(
     sample_voxeldata_3d, zarr_store, tree, compute, scheduler
 ):
     """One writer shares expensive chunks and releases them during a small stream."""
+    da = pytest.importorskip("dask.array")
+    import dask
+    from dask import delayed
+    from dask.callbacks import Callback
+
     calls = Counter()
     live = weakref.WeakValueDictionary()
     peak = []
@@ -329,8 +332,8 @@ def test_shared_chunk_execution_and_streaming(
 
 
 @pytest.mark.parametrize("tree", [False, True])
-def test_store_protection_and_delayed_errors(sample_voxeldata_3d, zarr_store, tree):
-    """Existing stores stay protected, and deferred signal failures propagate."""
+def test_store_protection(sample_voxeldata_3d, zarr_store, tree):
+    """Existing stores stay protected against incremental and accidental writes."""
     path, options = zarr_store
     source = sample_voxeldata_3d.to_dataset()
     if tree:
@@ -349,6 +352,15 @@ def test_store_protection_and_delayed_errors(sample_voxeldata_3d, zarr_store, tr
         with pytest.raises(ValueError, match="Incremental Zarr writes"):
             vd.save(source, path, **kwargs)
 
+
+@pytest.mark.parametrize("tree", [False, True])
+def test_delayed_write_error_propagates(sample_voxeldata_3d, zarr_store, tree):
+    """Computing a deferred dataset or tree write surfaces the signal failure."""
+    da = pytest.importorskip("dask.array")
+    from dask import delayed
+
+    path, options = zarr_store
+
     @delayed
     def broken():
         raise RuntimeError("synthetic source failure")
@@ -366,6 +378,7 @@ def test_store_protection_and_delayed_errors(sample_voxeldata_3d, zarr_store, tr
 
 def test_tree_root_name_metadata(tmp_path):
     """Reserved root-name metadata cannot overwrite user attributes silently."""
+    pytest.importorskip("zarr")
     path = tmp_path / "results.zarr"
     tree = xr.DataTree(xr.Dataset(attrs={"__voxeldata_tree_name__": "user value"}))
     with pytest.raises(ValueError, match="Root attribute.*reserved"):

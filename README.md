@@ -207,7 +207,9 @@ regions = vd.extract_with_labels(data, labels, reduction="mean")  # (..., region
 restored = signals.vd.unmask(mask) # Rebuild the mask's full spatial grid.
 ```
 
-Masks/labels must share the physical voxel grid. Select varying geometry before
+Binary extraction matches labels in mask order. Pass `join="inner"` to extract
+only the overlap of a cropped or partially matching mask. Masks and labels must
+share the physical voxel grid on the selected samples. Select varying geometry before
 using a shared spatial mask. Extraction preserves lazy signal data; `unmask` is
 eager. See the [extraction guide](docs/api/extract.md) for formats and chunking limits.
 

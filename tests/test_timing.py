@@ -1,10 +1,8 @@
 """Generic timestamp dependencies without acquisition-specific slice semantics."""
 
-import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
-from dask import delayed
 
 import voxeldata as vd
 
@@ -142,6 +140,17 @@ def test_invalid_timestamp_in_nonfirst_series_is_rejected(
         )
 
 
+@pytest.mark.parametrize("dependent", [False, True], ids=["shared", "per-view"])
+def test_constructor_rejects_complex_timestamps(dependent):
+    time = xr.DataArray([1j, 2j, 3j], dims="time")
+    if dependent:
+        time = time.expand_dims(view=[0, 1])
+    with pytest.raises(ValueError, match="time.*real"):
+        vd.create_voxeldata(
+            np.zeros((3, 2)), dims=("time", "view"), time=time, spacing=(1, 1, 1)
+        )
+
+
 @pytest.mark.parametrize(
     "dims, shape, match",
     [
@@ -181,6 +190,9 @@ def test_auxiliary_timing_coordinates_remain_consumer_defined(sample_voxeldata_3
 
 
 def test_timestamp_metadata_does_not_compute_signal_data(multiaxis_timestamps):
+    da = pytest.importorskip("dask.array")
+    from dask import delayed
+
     @delayed
     def fail():
         """Fail if construction or validation evaluates signal samples."""

@@ -13,7 +13,7 @@ import xarray as xr
 import voxeldata as vd
 
 
-@pytest.fixture(params=[False, True])
+@pytest.fixture(params=[False, True], ids=["native", "flox"])
 def label_backend(request: pytest.FixtureRequest) -> Iterator[bool]:
     """Exercise native and accelerated Xarray group reductions.
 
@@ -27,6 +27,8 @@ def label_backend(request: pytest.FixtureRequest) -> Iterator[bool]:
     bool
         Whether flox is enabled.
     """
+    if request.param:
+        pytest.importorskip("flox")
     with xr.set_options(use_flox=request.param):
         yield request.param
 

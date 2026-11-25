@@ -12,8 +12,17 @@ permissions:
   contents: read
 
 jobs:
-  base:
+  runtime:
+    name: Runtime dependencies (${{ matrix.profile }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {profile: base, package: ".", modules: ""}
+          - {profile: lazy, package: ".[lazy]", modules: "dask"}
+          - {profile: accel, package: ".[accel]", modules: "flox"}
+          - {profile: io, package: ".[io]", modules: "zarr h5netcdf"}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -23,15 +32,24 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install base package and pytest
+      - name: Install package and pytest
         run: |
           uv venv
-          uv pip install -e . pytest
+          uv pip install '${{ matrix.package }}' pytest
 
-      - name: Test without optional dependencies
+      - name: Check installed backends and run tests
+        env:
+          EXPECTED_MODULES: ${{ matrix.modules }}
         run: |
-          .venv/bin/python -c "import importlib.util; assert all(importlib.util.find_spec(name) is None for name in ('dask', 'flox', 'zarr', 'h5netcdf'))"
-          .venv/bin/python -m pytest -o addopts= tests/test_create.py tests/test_extract_mask.py
+          .venv/bin/python - <<'PY'
+          import os
+          from importlib.util import find_spec
+
+          installed = {m for m in ("dask", "flox", "zarr", "h5netcdf") if find_spec(m)}
+          expected = set(os.environ["EXPECTED_MODULES"].split())
+          assert installed == expected, (installed, expected)
+          PY
+          .venv/bin/python -m pytest -o addopts= tests/
 
   test:
     runs-on: ${{ matrix.os }}

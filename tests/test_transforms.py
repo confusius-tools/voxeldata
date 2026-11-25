@@ -319,7 +319,7 @@ def test_irregular_geometry_needs_explicit_or_origin_pivot(
 def test_transforms_keep_lazy_signal_uncomputed(
     sample_voxeldata_views: xr.DataArray,
 ) -> None:
-    import dask.array as da
+    da = pytest.importorskip("dask.array")
     from dask.callbacks import Callback
 
     data = sample_voxeldata_views.chunk({"view": 1})

@@ -3,6 +3,7 @@
 import numpy as np
 import xarray as xr
 
+from voxeldata._geometry import voxel_affines_match
 from voxeldata.validation import canonicalize_voxeldata, validate_voxeldata
 
 
@@ -57,7 +58,7 @@ def check_spatial_alignment(
             first = np.take(
                 index.voxel_to_world, [0], axis=index.geometry_dims.index(dim)
             )
-            if not np.allclose(index.voxel_to_world, first):
+            if not voxel_affines_match(index.voxel_to_world, first):
                 raise ValueError(
                     f"{name} does not share data's voxel grid: geometry varies along {dim!r}; "
                     "select a geometry before using a shared spatial array."

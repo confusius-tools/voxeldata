@@ -32,6 +32,7 @@ from xarray.indexes import CoordinateTransform, CoordinateTransformIndex
 
 from voxeldata._coordinates import get_representative_step
 from voxeldata._dims import VOXEL_DIMS, WORLD_DIMS
+from voxeldata._geometry import voxel_affines_match
 
 
 def _is_scalar_indexer(indexer: Any) -> bool:
@@ -682,7 +683,7 @@ class VoxelToWorldIndex(Index):
             )
         return (
             self.voxel_to_world.shape == other.voxel_to_world.shape
-            and np.allclose(self.voxel_to_world, other.voxel_to_world)
+            and voxel_affines_match(self.voxel_to_world, other.voxel_to_world)
             and bool(
                 cast(Index, self._index).equals(
                     cast(Index, other._index), exclude=exclude
@@ -1144,7 +1145,7 @@ class VoxelToWorldTransform(CoordinateTransform):
                 for dim in self.active_voxel_coords
             )
             and self.voxel_to_world.shape == other.voxel_to_world.shape
-            and np.allclose(self.voxel_to_world, other.voxel_to_world)
+            and voxel_affines_match(self.voxel_to_world, other.voxel_to_world)
         )
 
     def isel(self, indexers: Mapping[str, Any]) -> Self | None:

@@ -1,10 +1,8 @@
 """Model-level extraction regressions independent of modality and acquisition timing."""
 
-import dask.array as da
 import numpy as np
 import pytest
 import xarray as xr
-from dask import delayed
 
 import voxeldata as vd
 
@@ -15,6 +13,8 @@ import voxeldata as vd
 def test_chunked_label_reductions_against_numpy(
     sample_voxeldata_3dt, reduction, label_backend
 ):
+    da = pytest.importorskip("dask.array")
+
     data = sample_voxeldata_3dt.chunk({"time": 2, "k": 1, "j": 2, "i": 2})
     values = np.zeros(data.shape[-3:], dtype=int)
     values[0, :, 1:] = -3
@@ -190,6 +190,9 @@ def test_unmask_preserves_native_labels_named_frames_and_timestamps(
 def test_extraction_does_not_compute_signal_data(
     make_sample_voxeldata_mask, sample_voxeldata_3dt, label_backend
 ):
+    da = pytest.importorskip("dask.array")
+    from dask import delayed
+
     @delayed
     def fail():
         """Fail if signal samples are evaluated while constructing an extraction."""
@@ -232,7 +235,42 @@ def test_spatial_units_checked(sample_voxeldata_3dt, make_sample_voxeldata_mask)
         vd.extract_with_mask(sample_voxeldata_3dt, mask)
 
 
-def test_shared_affine_mask_checks_common_feature_labels_before_flattening():
+@pytest.mark.parametrize("origin", [0.0, 1_000_000.0])
+@pytest.mark.parametrize("stacked", [False, True], ids=["shared", "pose-dependent"])
+@pytest.mark.parametrize("extract", [vd.extract_with_mask, vd.extract_with_labels])
+def test_grid_alignment_is_independent_of_world_origin(origin, stacked, extract):
+    affine = np.eye(4)
+    affine[2, 3] = origin
+    data = vd.create_voxeldata([10, 20], dims=("i",), voxel_to_world=affine)
+    mask = vd.create_voxeldata([1, 0], dims=("i",), voxel_to_world=affine)
+    if stacked:
+        data = data.expand_dims(pose=[0, 1])
+        matrices = np.stack([affine, affine])
+        data = data.vd.set_voxel_to_world(matrices, geometry_dims=("pose",))
+        np.testing.assert_array_equal(extract(data, mask), [[10], [10]])
+        # Only the second pose moves, so a shared mask no longer matches.
+        matrices[1, 2, 3] += 1
+        data = data.vd.set_voxel_to_world(matrices, geometry_dims=("pose",))
+    else:
+        np.testing.assert_array_equal(extract(data, mask), [10])
+        mask = mask.vd.translate([0, 0, 1])
+    with pytest.raises(ValueError, match="voxel grid"):
+        extract(data, mask)
+
+
+@pytest.mark.parametrize("scale", [1e-4, 1e3])
+def test_grid_alignment_tolerates_roundoff_relative_to_voxel_size(scale):
+    affine = np.diag([scale, scale * 2, scale * 3, 1])
+    data = vd.create_voxeldata([10, 20], dims=("i",), voxel_to_world=affine)
+    mask = data == 20
+    np.testing.assert_array_equal(
+        vd.extract_with_mask(data, mask.vd.translate([1e-7 * scale, 0, 0])), [20]
+    )
+    with pytest.raises(ValueError, match="voxel grid"):
+        vd.extract_with_mask(data, mask.vd.translate([scale, 0, 0]))
+
+
+def test_shared_affine_mask_matches_common_feature_labels_before_flattening():
     data = vd.create_voxeldata(
         [10, 20],
         dims=("view",),
@@ -246,8 +284,9 @@ def test_shared_affine_mask_checks_common_feature_labels_before_flattening():
         extra_coords={"view": [20, 10]},
         voxel_to_world=np.eye(4),
     )
-    with pytest.raises(ValueError, match="view.*labels differ"):
-        data.vd.extract_with_mask(mask)
+    signals = data.vd.extract_with_mask(mask)
+    np.testing.assert_array_equal(signals, [20])
+    assert list(signals.indexes["space"]) == [(20, 0, 0, 0)]
     np.testing.assert_array_equal(
         data.vd.extract_with_mask(mask.sel(view=[10, 20])), [20]
     )

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from voxeldata import create_voxeldata
 from voxeldata.extract import extract_with_labels, extract_with_mask, unmask
 from voxeldata.geometry import (
     attach_voxel_to_world_index,
@@ -147,11 +148,12 @@ def test_extract_with_mask_preserves_dask_laziness(
     mask.data[0, 1, 2] = True
     chunked = sample_voxeldata_3dt.chunk({"time": 2})
 
-    result = extract_with_mask(chunked, mask)
+    mask = mask.isel(i=slice(2, None, -1))
+    result = extract_with_mask(chunked, mask, join="inner")
 
     assert hasattr(result.data, "chunks")
     xr.testing.assert_identical(
-        result.compute(), extract_with_mask(sample_voxeldata_3dt, mask)
+        result.compute(), extract_with_mask(sample_voxeldata_3dt, mask, join="inner")
     )
 
 
@@ -214,3 +216,77 @@ def test_unmask_validates_signal_space_size(
 
     with pytest.raises(ValueError, match="doesn't match"):
         unmask(np.array([1.0]), mask)
+
+
+def test_inner_matches_varying_geometry_and_voxels_in_mask_order():
+    frames = np.stack([np.eye(4)] * 3)
+    frames[:, 0, 3] = [10, 20, 30]
+    data = create_voxeldata(
+        np.arange(9).reshape(3, 3),
+        dims=("pose", "i"),
+        i=[10, 11, 12],
+        extra_coords={"pose": [1, 2, 3]},
+        voxel_to_world=frames,
+        geometry_dims=("pose",),
+    )
+    mask = create_voxeldata(
+        [[1, 1, 1], [1, 1, 0], [1, 0, 1]],
+        dims=("pose", "i"),
+        i=[13, 12, 11],
+        extra_coords={"pose": [4, 3, 1]},
+        voxel_to_world=frames[[1, 2, 0]],
+        geometry_dims=("pose",),
+    )
+    with pytest.raises(ValueError, match="same labels"):
+        extract_with_mask(data, mask)
+    signals = data.vd.extract_with_mask(mask, join="inner")
+    np.testing.assert_array_equal(signals, [8, 1])
+    assert list(signals.indexes["space"]) == [(3, 0, 0, 12), (1, 0, 0, 11)]
+    matched_mask = mask.sel(pose=[3, 1], i=[12, 11])
+    restored = signals.vd.unmask(matched_mask, fill_value=-1)
+    np.testing.assert_array_equal(restored.values.reshape(2, 2), [[8, -1], [-1, 1]])
+
+    with pytest.raises(ValueError, match="voxel grid"):
+        extract_with_mask(data, mask.vd.translate([0, 0, 5]), join="inner")
+    with pytest.raises(ValueError, match="units differ"):
+        extract_with_mask(data, mask.vd.set_world_units("cm"), join="inner")
+    with pytest.raises(ValueError, match="no matching labels"):
+        extract_with_mask(data, mask.sel(pose=[4]), join="inner")
+
+
+def test_exact_matches_reversed_native_voxel_labels(sample_voxeldata_3d):
+    data = sample_voxeldata_3d
+    mask = (data >= 0).isel(i=slice(None, None, -1))
+    signals = extract_with_mask(data, mask)
+    expected = data.values[..., ::-1]
+    np.testing.assert_array_equal(signals, expected.ravel())
+    np.testing.assert_array_equal(unmask(signals, mask), expected)
+
+
+def test_default_join_rejects_strict_subset_of_data_labels():
+    data = create_voxeldata([10, 20, 30], dims=("i",), spacing=(1, 1, 1))
+    mask = (data > 0).isel(i=[2, 0])
+    with pytest.raises(ValueError, match="same labels on 'i'"):
+        extract_with_mask(data, mask)
+    np.testing.assert_array_equal(extract_with_mask(data, mask, join="inner"), [30, 10])
+
+
+def test_inner_validates_mask_values_outside_intersection():
+    data = create_voxeldata([10, 20], dims=("i",), spacing=(1, 1, 1))
+    mask = create_voxeldata([1, 2], dims=("i",), i=[1, 2], spacing=(1, 1, 1))
+    with pytest.raises(TypeError, match="distinct non-zero values"):
+        extract_with_mask(data, mask, join="inner")
+
+
+def test_mask_join_rejects_ambiguous_and_unknown_joins():
+    data = create_voxeldata(
+        [1, 2, 3],
+        dims=("channel",),
+        extra_coords={"channel": ["a", "a", "b"]},
+        spacing=(1, 1, 1),
+    )
+    mask = (data > 0).isel(channel=[2, 0, 1])
+    with pytest.raises(ValueError, match="unique labels"):
+        extract_with_mask(data, mask, join="inner")
+    with pytest.raises(ValueError, match="join must be"):
+        extract_with_mask(data, mask, join="left")  # ty: ignore[invalid-argument-type]

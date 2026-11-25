@@ -28,7 +28,7 @@ Timestamp dependencies need not match `geometry_dims`: this example has varying
 acquisition timestamps but shared geometry. The constructor accepts `time` in any
 axis position and normalizes the timestamp coordinate to put `time` first. All
 other timestamp axes must be nonspatial data dimensions of the matching sizes.
-Each series must be numeric, finite, and strictly increasing along `time`.
+Each series must contain finite, real numeric values that increase strictly along `time`.
 
 Multidimensional timestamps are not an ordinary Xarray time index. Select all
 additional timestamp dependencies before time-label lookup or an analysis that

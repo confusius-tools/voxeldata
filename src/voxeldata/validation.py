@@ -156,6 +156,9 @@ def _validate_dimension_coordinate(
         return
 
     coord = da.coords[dim]
+    # Shared and dependent timestamps must support real-valued elapsed time.
+    if dim == TIME_DIM and coord.dtype.kind not in "iuf":
+        raise ValueError(f"Coordinate {dim!r} must be numeric and real-valued.")
     if (
         dim == TIME_DIM
         and coord.ndim > 1
@@ -163,8 +166,6 @@ def _validate_dimension_coordinate(
         and all(d in da.dims and d not in VOXEL_DIMS for d in coord.dims)
     ):
         # Timestamp dependencies are independent of affine dependencies.
-        if not np.issubdtype(coord.dtype, np.number):
-            raise ValueError(f"Coordinate {dim!r} must be numeric.")
         values = np.asarray(coord.transpose(TIME_DIM, ...).values)
         if not np.all(np.isfinite(values)):
             raise ValueError(f"Coordinate {dim!r} contains non-finite numeric values.")

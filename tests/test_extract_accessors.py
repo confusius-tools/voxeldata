@@ -63,6 +63,7 @@ def test_label_accessor_defaults_to_mean(sample_voxeldata_3d: xr.DataArray) -> N
 def test_extraction_accessor_does_not_compute_lazy_signal(
     sample_voxeldata_3dt: xr.DataArray,
 ) -> None:
+    pytest.importorskip("dask.array")
     from dask.callbacks import Callback
 
     data = sample_voxeldata_3dt.chunk({"time": 2})

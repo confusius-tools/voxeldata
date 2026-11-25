@@ -72,8 +72,10 @@ and matching physical grids.
   retained. Label maps are spatial-only, optionally with a leading `mask` axis.
   The model's existing canonical leading-axis ordering is applied first.
 - A shared spatial mask/map may span geometry dependencies only when the affine
-  matrices agree. Select a geometry first when its physical grid differs. Geometry
-  axes retain their ordinary indexes when not included in the flattened mask.
+  matrices agree. Grid origins may differ by at most `1e-5` times the shortest
+  voxel-axis length in the two affines. Select a geometry first when its physical
+  grid differs. Geometry axes retain their ordinary indexes when not included in
+  the flattened mask.
 - Signal data remain lazy for Dask-backed extraction and aggregation; mask/label
   values are evaluated eagerly. With flox acceleration, median requires each region to fit
   within an individual Dask chunk. Explicitly rechunk spatial axes when necessary;
@@ -84,6 +86,30 @@ and matching physical grids.
   `space` MultiIndex or copy arbitrary auxiliary coordinates from the signal table.
 - No acquisition units/reference/duration defaults are added. Existing timestamp
   attributes are retained where timestamp coordinates are preserved.
+
+## Matching binary masks by label
+
+By default, `extract_with_mask` requires the same set of labels on each mask
+dimension. It reads the signal in mask-label order, including when native voxel
+labels run in the opposite direction. For a cropped mask or partially overlapping
+recordings, request an inner join:
+
+```python
+# recording.pose contains [10, 20, 30] and mask.pose contains [20, 40].
+signals = recording.vd.extract_with_mask(mask, join="inner")
+# Only pose 20 contributes samples; the spatial labels match in this example.
+restored = signals.vd.unmask(mask.sel(pose=[20]))
+```
+
+The intersection is taken separately along each named mask axis. An empty
+intersection raises an error. Reordering or intersecting unequal indexes needs
+unique labels. Keep singleton axes with list selection, such as `sel(pose=[20])`,
+to restrict extraction to a particular pose. A spatial mask with no `pose`
+dimension applies across all poses only if they share a physical grid. Affines
+and units must agree on the matched grids.
+
+For positional reconstruction, pass the mask restricted to the same overlap,
+retaining its label order. When every mask label was found, pass the original mask.
 
 ::: voxeldata.extract.extract_with_mask
 
